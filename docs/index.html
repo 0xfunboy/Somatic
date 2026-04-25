@@ -1,0 +1,746 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Project LSF — Latent-Somatic Fusion</title>
+<link rel="icon" type="image/x-icon" href="assets/favicon.ico"/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;800&family=Share+Tech+Mono&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+<style>
+:root{
+  --bg:#030d1c;--bg2:#071828;--bg3:#0d2040;
+  --cyan:#00cfff;--cyan2:#00a8d4;--purple:#7040e8;--purple2:#9060ff;
+  --green:#22c55e;--red:#ef4444;--orange:#f97316;--yellow:#eab308;
+  --text:#e2e8f0;--text2:#94a3b8;--text3:#475569;
+  --border:rgba(0,207,255,.15);--border2:rgba(0,207,255,.08);
+  --mono:'Share Tech Mono',monospace;
+  --sans:'Inter',sans-serif;
+  --head:'Orbitron',sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:15px;line-height:1.7;overflow-x:hidden}
+
+/* ── scrollbar ── */
+::-webkit-scrollbar{width:6px}::-webkit-scrollbar-track{background:var(--bg)}::-webkit-scrollbar-thumb{background:var(--bg3);border-radius:3px}
+
+/* ── grid overlay ── */
+body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(var(--bg2) 1px,transparent 1px),linear-gradient(90deg,var(--bg2) 1px,transparent 1px);background-size:40px 40px;pointer-events:none;z-index:0;opacity:.4}
+
+/* ── nav ── */
+nav{position:fixed;top:0;left:0;right:0;z-index:100;backdrop-filter:blur(20px);background:rgba(3,13,28,.85);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:0;height:56px}
+.nav-logo{display:flex;align-items:center;gap:12px;padding:0 28px;border-right:1px solid var(--border);height:100%}
+.nav-logo img{height:28px}
+.nav-logo span{font-family:var(--head);font-size:11px;letter-spacing:.15em;color:var(--cyan);text-transform:uppercase}
+.nav-links{display:flex;align-items:center;gap:0;flex:1;padding:0 12px}
+.nav-links a{padding:0 16px;height:56px;display:flex;align-items:center;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--text2);text-decoration:none;border-right:1px solid var(--border2);transition:color .2s,background .2s}
+.nav-links a:hover,.nav-links a.active{color:var(--cyan);background:rgba(0,207,255,.05)}
+.nav-right{margin-left:auto;padding:0 20px;display:flex;gap:10px}
+.btn{display:inline-flex;align-items:center;gap:8px;padding:8px 18px;border-radius:4px;font-family:var(--head);font-size:10px;letter-spacing:.12em;text-transform:uppercase;text-decoration:none;cursor:pointer;transition:all .2s}
+.btn-outline{border:1px solid var(--cyan);color:var(--cyan);background:transparent}.btn-outline:hover{background:rgba(0,207,255,.1)}
+.btn-primary{background:var(--cyan);color:var(--bg);border:1px solid var(--cyan)}.btn-primary:hover{background:var(--cyan2)}
+
+/* ── hero ── */
+.hero{position:relative;min-height:100vh;display:flex;align-items:center;justify-content:center;overflow:hidden;padding-top:56px}
+.hero-bg{position:absolute;inset:0;background:radial-gradient(ellipse 80% 60% at 50% 40%,rgba(112,64,232,.12) 0%,transparent 70%),radial-gradient(ellipse 60% 40% at 30% 60%,rgba(0,207,255,.08) 0%,transparent 60%)}
+.hero-content{position:relative;text-align:center;max-width:900px;padding:40px 20px}
+.hero-eyebrow{font-family:var(--head);font-size:11px;letter-spacing:.3em;color:var(--cyan);text-transform:uppercase;margin-bottom:20px;display:flex;align-items:center;justify-content:center;gap:12px}
+.hero-eyebrow::before,.hero-eyebrow::after{content:'';width:60px;height:1px;background:linear-gradient(90deg,transparent,var(--cyan))}
+.hero-eyebrow::after{transform:scaleX(-1)}
+h1.hero-title{font-family:var(--head);font-size:clamp(32px,6vw,72px);font-weight:800;line-height:1.1;letter-spacing:-.02em;background:linear-gradient(135deg,#fff 30%,var(--cyan) 70%,var(--purple));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;margin-bottom:10px}
+.hero-subtitle{font-family:var(--mono);font-size:14px;color:var(--cyan);letter-spacing:.08em;margin-bottom:24px}
+.hero-desc{font-size:17px;color:var(--text2);max-width:680px;margin:0 auto 36px;line-height:1.8}
+.hero-actions{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
+.hero-image{margin-top:60px;position:relative}
+.hero-image img{width:100%;max-width:900px;border-radius:8px;border:1px solid var(--border);box-shadow:0 0 80px rgba(0,207,255,.1),0 0 160px rgba(112,64,232,.06)}
+.hero-image::before{content:'';position:absolute;inset:-1px;border-radius:9px;background:linear-gradient(135deg,rgba(0,207,255,.2),transparent 40%,rgba(112,64,232,.15));pointer-events:none;z-index:1}
+
+/* ── sections ── */
+section{position:relative;z-index:1}
+.container{max-width:1200px;margin:0 auto;padding:0 28px}
+.section-header{text-align:center;margin-bottom:64px}
+.section-tag{font-family:var(--head);font-size:10px;letter-spacing:.25em;text-transform:uppercase;color:var(--cyan);display:inline-flex;align-items:center;gap:8px;margin-bottom:14px}
+.section-tag::before{content:'';width:24px;height:1px;background:var(--cyan)}
+.section-tag::after{content:'';width:24px;height:1px;background:var(--cyan)}
+h2.section-title{font-family:var(--head);font-size:clamp(24px,4vw,42px);font-weight:700;letter-spacing:-.02em;background:linear-gradient(135deg,#fff,var(--text2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;margin-bottom:16px}
+.section-lead{font-size:16px;color:var(--text2);max-width:620px;margin:0 auto}
+
+/* ── metrics bar ── */
+.metrics-bar{background:var(--bg2);border-top:1px solid var(--border);border-bottom:1px solid var(--border);padding:20px 0}
+.metrics-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:0}
+.metric-item{padding:16px 28px;border-right:1px solid var(--border);text-align:center}
+.metric-item:last-child{border-right:none}
+.metric-value{font-family:var(--head);font-size:28px;font-weight:800;color:var(--cyan);letter-spacing:-.02em}
+.metric-label{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--text3);margin-top:4px}
+
+/* ── overview / three layers ── */
+.layers-section{padding:100px 0}
+.layers-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--border)}
+.layer-card{background:var(--bg);padding:40px 32px;position:relative;overflow:hidden}
+.layer-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--accent,var(--cyan))}
+.layer-card.l2::before{background:var(--purple)}
+.layer-card.l3::before{background:linear-gradient(90deg,var(--purple),var(--cyan))}
+.layer-num{font-family:var(--head);font-size:10px;letter-spacing:.2em;color:var(--text3);text-transform:uppercase;margin-bottom:12px}
+.layer-name{font-family:var(--head);font-size:15px;font-weight:700;color:var(--cyan);letter-spacing:.05em;margin-bottom:20px;line-height:1.3}
+.layer-card.l2 .layer-name{color:var(--purple2)}
+.layer-desc{font-size:14px;color:var(--text2);line-height:1.7;margin-bottom:20px}
+.layer-specs{list-style:none;display:flex;flex-direction:column;gap:6px}
+.layer-specs li{font-family:var(--mono);font-size:12px;color:var(--text3);display:flex;align-items:flex-start;gap:8px}
+.layer-specs li::before{content:'›';color:var(--cyan);flex-shrink:0;margin-top:1px}
+.layer-card.l2 .layer-specs li::before{color:var(--purple2)}
+
+/* ── theory section ── */
+.theory-section{padding:100px 0;background:linear-gradient(180deg,transparent,rgba(7,24,40,.8),transparent)}
+.theory-grid{display:grid;grid-template-columns:1fr 1fr;gap:40px;align-items:start}
+.theory-content h3{font-family:var(--head);font-size:18px;font-weight:700;color:var(--text);letter-spacing:.03em;margin-bottom:16px}
+.theory-content p{font-size:14px;color:var(--text2);line-height:1.8;margin-bottom:20px}
+.math-block{background:var(--bg2);border:1px solid var(--border);border-left:3px solid var(--purple);border-radius:0 6px 6px 0;padding:20px 24px;margin:20px 0;font-family:var(--mono);font-size:13px;color:var(--cyan);line-height:2;overflow-x:auto}
+.math-block .comment{color:var(--text3)}
+.math-block .highlight{color:var(--purple2)}
+.math-card{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:28px;margin-bottom:20px}
+.math-card h4{font-family:var(--head);font-size:11px;letter-spacing:.15em;text-transform:uppercase;color:var(--cyan);margin-bottom:16px}
+.formula{font-family:var(--mono);font-size:14px;color:var(--text);line-height:2.2;text-align:center;padding:12px}
+.formula em{color:var(--cyan)}
+.formula strong{color:var(--purple2)}
+
+/* ── pipeline diagram ── */
+.pipeline-section{padding:100px 0}
+.pipeline-flow{display:flex;align-items:stretch;gap:0;overflow-x:auto;padding:8px 0}
+.pipeline-step{flex:1;min-width:180px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:24px 20px;position:relative}
+.pipeline-arrow{display:flex;align-items:center;padding:0 12px;color:var(--cyan);font-size:20px;flex-shrink:0}
+.pipeline-step-num{font-family:var(--head);font-size:10px;letter-spacing:.2em;color:var(--text3);margin-bottom:8px}
+.pipeline-step-title{font-family:var(--head);font-size:12px;color:var(--cyan);margin-bottom:10px;letter-spacing:.05em}
+.pipeline-step-body{font-size:12px;color:var(--text2);line-height:1.6}
+.pipeline-step code{font-family:var(--mono);font-size:11px;background:var(--bg3);color:var(--cyan);padding:1px 5px;border-radius:3px}
+
+/* ── hardware section ── */
+.hw-section{padding:100px 0}
+.hw-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:20px;margin-bottom:48px}
+.hw-card{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:28px;position:relative;overflow:hidden}
+.hw-card::after{content:'';position:absolute;bottom:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--accent,var(--cyan)),transparent)}
+.hw-card-icon{width:40px;height:40px;background:rgba(0,207,255,.1);border:1px solid rgba(0,207,255,.2);border-radius:6px;display:flex;align-items:center;justify-content:center;margin-bottom:16px}
+.hw-card-icon svg{width:20px;height:20px;stroke:var(--cyan)}
+.hw-card h4{font-family:var(--head);font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--text);margin-bottom:8px}
+.hw-card .hw-part{font-family:var(--mono);font-size:13px;color:var(--cyan);margin-bottom:6px}
+.hw-card p{font-size:13px;color:var(--text2);line-height:1.6}
+.wiring-block{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:32px;font-family:var(--mono);font-size:13px;line-height:2}
+.wiring-block .pin{color:var(--cyan)}.wiring-block .net{color:var(--purple2)}.wiring-block .comment{color:var(--text3)}
+
+/* ── development section ── */
+.dev-section{padding:100px 0;background:linear-gradient(180deg,transparent,rgba(7,24,40,.6),transparent)}
+.dev-grid{display:grid;grid-template-columns:1fr 1fr;gap:40px}
+.dev-card{background:var(--bg2);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.dev-card-header{padding:16px 24px;background:var(--bg3);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px}
+.dev-card-header span{font-family:var(--head);font-size:10px;letter-spacing:.15em;text-transform:uppercase;color:var(--text2)}
+.dev-card-dots{display:flex;gap:6px}.dev-card-dot{width:10px;height:10px;border-radius:50%}
+pre{padding:24px;font-family:var(--mono);font-size:12px;line-height:1.8;overflow-x:auto;tab-size:2}
+.token-comment{color:#475569}.token-string{color:#86efac}.token-keyword{color:var(--cyan)}.token-func{color:var(--purple2)}.token-num{color:#fb923c}
+.timeline{display:flex;flex-direction:column;gap:0}
+.tl-item{display:flex;gap:20px;padding:20px 0;border-bottom:1px solid var(--border2)}
+.tl-item:last-child{border-bottom:none}
+.tl-num{font-family:var(--head);font-size:10px;color:var(--cyan);letter-spacing:.1em;flex-shrink:0;padding-top:2px;width:24px}
+.tl-body h4{font-size:14px;font-weight:600;color:var(--text);margin-bottom:4px}
+.tl-body p{font-size:13px;color:var(--text2);line-height:1.6}
+.tl-body code{font-family:var(--mono);font-size:12px;color:var(--cyan);background:var(--bg3);padding:1px 6px;border-radius:3px}
+
+/* ── research section ── */
+.research-section{padding:100px 0}
+.paper-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:20px}
+.paper-card{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:28px;transition:border-color .2s,transform .2s}
+.paper-card:hover{border-color:rgba(0,207,255,.4);transform:translateY(-2px)}
+.paper-tag{font-family:var(--mono);font-size:10px;letter-spacing:.1em;color:var(--purple2);text-transform:uppercase;margin-bottom:10px}
+.paper-card h4{font-size:14px;font-weight:600;color:var(--text);margin-bottom:10px;line-height:1.5}
+.paper-card p{font-size:13px;color:var(--text2);line-height:1.6}
+.paper-year{font-family:var(--mono);font-size:11px;color:var(--text3);margin-top:12px}
+
+/* ── API section ── */
+.api-section{padding:100px 0;background:linear-gradient(180deg,transparent,rgba(7,24,40,.8),transparent)}
+.api-grid{display:grid;gap:2px;background:var(--border);border-radius:8px;overflow:hidden}
+.api-row{display:grid;grid-template-columns:220px 120px 1fr;background:var(--bg2)}
+.api-row.header{background:var(--bg3);font-family:var(--head);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--text3)}
+.api-cell{padding:14px 20px;font-size:13px;border-right:1px solid var(--border2)}
+.api-cell:last-child{border-right:none}
+.api-cell code{font-family:var(--mono);font-size:12px;color:var(--cyan)}
+.badge{display:inline-flex;align-items:center;font-family:var(--mono);font-size:10px;padding:2px 8px;border-radius:3px;letter-spacing:.05em}
+.badge-get{background:rgba(34,197,94,.15);color:var(--green);border:1px solid rgba(34,197,94,.3)}
+.badge-put{background:rgba(234,179,8,.1);color:var(--yellow);border:1px solid rgba(234,179,8,.2)}
+.badge-cpp{background:rgba(112,64,232,.15);color:var(--purple2);border:1px solid rgba(112,64,232,.3)}
+.badge-py{background:rgba(0,207,255,.1);color:var(--cyan);border:1px solid rgba(0,207,255,.2)}
+
+/* ── footer ── */
+footer{border-top:1px solid var(--border);padding:48px 0;background:var(--bg2)}
+.footer-grid{display:grid;grid-template-columns:1fr auto;gap:40px;align-items:center}
+.footer-logo{display:flex;align-items:center;gap:14px;margin-bottom:12px}
+.footer-logo img{height:32px;opacity:.8}
+.footer-logo span{font-family:var(--head);font-size:13px;color:var(--text2)}
+.footer-tagline{font-size:13px;color:var(--text3);max-width:400px;line-height:1.6}
+.footer-links{display:flex;flex-direction:column;gap:8px;text-align:right}
+.footer-links a{font-size:13px;color:var(--text3);text-decoration:none;transition:color .2s}
+.footer-links a:hover{color:var(--cyan)}
+.footer-bottom{border-top:1px solid var(--border2);padding-top:24px;margin-top:32px;display:flex;justify-content:space-between;align-items:center}
+.footer-copy{font-family:var(--mono);font-size:11px;color:var(--text3)}
+
+/* ── status chip ── */
+.chip{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:99px;font-family:var(--mono);font-size:11px}
+.chip-active{background:rgba(34,197,94,.1);border:1px solid rgba(34,197,94,.25);color:var(--green)}
+.chip-active::before{content:'';width:6px;height:6px;border-radius:50%;background:var(--green);animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+
+/* ── separator ── */
+.sep{height:1px;background:linear-gradient(90deg,transparent,var(--border),transparent);margin:0}
+
+/* ── responsive ── */
+@media(max-width:768px){
+  .layers-grid,.theory-grid,.dev-grid,.footer-grid{grid-template-columns:1fr}
+  .api-row{grid-template-columns:1fr;}.api-cell{border-right:none;border-bottom:1px solid var(--border2)}
+  .nav-links a:nth-child(n+4){display:none}
+  .pipeline-flow{flex-direction:column}
+  .pipeline-arrow{transform:rotate(90deg);align-self:flex-start;padding:8px 0}
+}
+</style>
+</head>
+<body>
+
+<!-- ══ NAV ══ -->
+<nav>
+  <div class="nav-logo">
+    <img src="assets/FELogo_nav.png" alt="LSF"/>
+    <span>LSF</span>
+  </div>
+  <div class="nav-links">
+    <a href="#overview">Overview</a>
+    <a href="#theory">Theory</a>
+    <a href="#architecture">Architecture</a>
+    <a href="#hardware">Hardware</a>
+    <a href="#development">Development</a>
+    <a href="#research">Research</a>
+    <a href="#api">API</a>
+  </div>
+  <div class="nav-right">
+    <span class="chip chip-active">v2.0</span>
+    <a href="simulator.html" class="btn btn-primary">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5,3 19,12 5,21"/></svg>
+      Launch Simulator
+    </a>
+  </div>
+</nav>
+
+<!-- ══ HERO ══ -->
+<section class="hero" id="top">
+  <div class="hero-bg"></div>
+  <div class="hero-content">
+    <div class="hero-eyebrow">Project Documentation</div>
+    <h1 class="hero-title">Latent-Somatic<br/>Fusion</h1>
+    <div class="hero-subtitle">// Direct projection of continuous physical state into LLM latent space</div>
+    <p class="hero-desc">
+      An open-hardware, open-source architecture that enables a Large Language Model
+      to perceive continuous physical reality — voltage, heat, gravity, motion —
+      not as text tokens, but as native vectors injected directly into its attention mechanism.
+    </p>
+    <div class="hero-actions">
+      <a href="#theory" class="btn btn-outline">Read the Theory</a>
+      <a href="simulator.html" class="btn btn-primary">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5,3 19,12 5,21"/></svg>
+        Open Simulator
+      </a>
+    </div>
+    <div class="hero-image">
+      <img src="assets/LSF.png" alt="Latent-Somatic Fusion Architecture"/>
+    </div>
+  </div>
+</section>
+
+<!-- ══ METRICS ══ -->
+<div class="metrics-bar" id="overview">
+  <div class="container">
+    <div class="metrics-grid">
+      <div class="metric-item">
+        <div class="metric-value">11</div>
+        <div class="metric-label">Physical Dimensions</div>
+      </div>
+      <div class="metric-item">
+        <div class="metric-value">4096</div>
+        <div class="metric-label">Latent Dimensions</div>
+      </div>
+      <div class="metric-item">
+        <div class="metric-value">100Hz</div>
+        <div class="metric-label">Sensor Polling Rate</div>
+      </div>
+      <div class="metric-item">
+        <div class="metric-value">5Hz</div>
+        <div class="metric-label">Cognitive Loop Rate</div>
+      </div>
+      <div class="metric-item">
+        <div class="metric-value">3</div>
+        <div class="metric-label">Architecture Layers</div>
+      </div>
+      <div class="metric-item">
+        <div class="metric-value">0.94</div>
+        <div class="metric-label">InfoNCE Best Loss</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ LAYERS OVERVIEW ══ -->
+<section class="layers-section">
+  <div class="container">
+    <div class="section-header">
+      <div class="section-tag">System Architecture</div>
+      <h2 class="section-title">Three Concurrent Layers</h2>
+      <p class="section-lead">Each layer runs in an independent thread, communicating through lock-free shared buffers.</p>
+    </div>
+    <div class="layers-grid">
+      <div class="layer-card l1">
+        <div class="layer-num">Layer 1 / Hard Real-Time</div>
+        <div class="layer-name">Autonomous Nervous System</div>
+        <p class="layer-desc">Dedicated C++ thread polling hardware sensors at 100 Hz via I²C/SPI. Owns the hardware lock, performs homeostatic monitoring and triggers survival overrides without waiting for the LLM.</p>
+        <ul class="layer-specs">
+          <li>BMS via I²C — voltage & current (BQ34Z100)</li>
+          <li>IMU via I²C — 9-axis motion (ICM-42688-P)</li>
+          <li>Thermistors — silicon & motor temps (TMP117)</li>
+          <li>100 Hz polling, critical threshold at 10.5V / 85°C</li>
+          <li>Thread-safe state buffer, async survival callback</li>
+        </ul>
+      </div>
+      <div class="layer-card l2">
+        <div class="layer-num">Layer 2 / Neural Bridge</div>
+        <div class="layer-name">Somatic-Latent Projection Layer</div>
+        <p class="layer-desc">A LibTorch MLP maps the 11-dimensional physical state vector into the 4096-dimensional embedding space of the target LLM. Trained via contrastive learning to align physical states with semantic descriptions.</p>
+        <ul class="layer-specs">
+          <li>Architecture: Linear(11→256) → GELU → Linear(256→1024) → GELU → Linear(1024→4096) → LayerNorm</li>
+          <li>Training: InfoNCE contrastive loss (CLIP-style)</li>
+          <li>Temperature τ learned: 14.2 → 17.2 over 200 epochs</li>
+          <li>Weights saved as TorchScript for C++ inference</li>
+        </ul>
+      </div>
+      <div class="layer-card l3">
+        <div class="layer-num">Layer 3 / Cognitive Engine</div>
+        <div class="layer-name">LLM Inference with Somatic Injection</div>
+        <p class="layer-desc">The somatic vector is injected as token-0 in the KV cache using <code>llama_batch.embd</code>, bypassing the tokenizer entirely. The transformer attends over [somatic_token | text_tokens] natively.</p>
+        <ul class="layer-specs">
+          <li>Injection via <code>llama_batch.embd</code> (raw float array)</li>
+          <li>Somatic token at position 0 — system root</li>
+          <li>Text tokens follow at positions 1…N</li>
+          <li>5 Hz cognitive loop, non-blocking to hardware thread</li>
+          <li>Compatible with any GGUF-format LLM (LLaMA-3, Mistral, Phi)</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="sep"></div>
+
+<!-- ══ THEORY ══ -->
+<section class="theory-section" id="theory">
+  <div class="container">
+    <div class="section-header">
+      <div class="section-tag">Mathematical Foundation</div>
+      <h2 class="section-title">Theory of Somatic Grounding</h2>
+      <p class="section-lead">Why bypassing the tokenizer is not a trick, but a mathematical necessity.</p>
+    </div>
+    <div class="theory-grid">
+      <div class="theory-content">
+        <h3>The Tokenizer Bottleneck</h3>
+        <p>Standard LLMs perceive the world through a vocabulary of discrete tokens. When a sensor reading of <code>9.81</code> is passed as text, the tokenizer splits it into the character sequences <code>9</code>, <code>.</code>, <code>8</code>, <code>1</code> — four independent tokens whose embedding vectors carry no inherent notion of physical magnitude, continuity, or temporal relationship.</p>
+        <p>This is not merely inefficient. It is architecturally incompatible with physical reality. A voltage reading is a point on a continuous manifold. A token is a discrete symbol in a finite vocabulary. The information structures are incommensurable.</p>
+        <h3>The Projection Hypothesis</h3>
+        <p>LSF posits that a sufficiently trained MLP can learn a smooth, differentiable mapping from the space of physical sensor measurements ℝᴺ into the high-dimensional semantic embedding space ℝᴰ of an LLM such that semantically related physical states map to geometrically proximal regions.</p>
+        <div class="math-block">
+<span class="comment">// The projection mapping</span>
+φ: ℝᴺ → ℝᴰ
+<span class="comment">// where N = sensor dimensions, D = LLM embedding dimension</span>
+
+<span class="comment">// Physical state vector</span>
+<span class="highlight">S</span> = [V, I, T_si, T_ml, T_mr, aₓ, aᵧ, a_z, ωₓ, ωᵧ, ω_z] ∈ ℝ¹¹
+
+<span class="comment">// Somatic vector (the "body token")</span>
+<span class="highlight">Vₛ</span> = φ(<span class="highlight">S</span>) = LayerNorm(W₃·GELU(W₂·GELU(W₁·<span class="highlight">S</span>))) ∈ ℝ⁴⁰⁹⁶
+        </div>
+        <h3>Attention Fusion</h3>
+        <p>Once <strong>Vₛ</strong> is in the LLM's embedding space, it is concatenated with text token embeddings before the first attention layer. The transformer computes cross-attention naturally over the combined sequence:</p>
+      </div>
+      <div>
+        <div class="math-card">
+          <h4>Contrastive Alignment Objective</h4>
+          <div class="formula">
+            <em>L</em> = InfoNCE(<em>z_sensor</em>, <em>z_text</em>)<br/><br/>
+            = <strong>−</strong> 𝔼 [ log <em>exp</em>(sim(<em>zᵢˢ</em>,<em>zᵢᵗ</em>)/<em>τ</em>) / <strong>Σⱼ</strong> <em>exp</em>(sim(<em>zᵢˢ</em>,<em>zⱼᵗ</em>)/<em>τ</em>) ]
+          </div>
+        </div>
+        <div class="math-card">
+          <h4>Context Fusion</h4>
+          <div class="formula">
+            Context = Concat(<em><strong>Vₛ</strong></em>, E<sub>text</sub>)<br/><br/>
+            = [<em>body root</em> | token₁ | token₂ | … | tokenₙ]<br/><br/>
+            A(Q,K,V) over full sequence
+          </div>
+        </div>
+        <div class="math-card">
+          <h4>Survival Gate (Hard Real-Time)</h4>
+          <div class="formula">
+            <strong>if</strong> V(t) &lt; V<sub>crit</sub> <strong>or</strong> T(t) &gt; T<sub>crit</sub><br/>
+            &nbsp;&nbsp;→ <em>survival_callback(S)</em> <strong>// async, lock-free</strong><br/><br/>
+            <strong>independent of LLM forward pass</strong>
+          </div>
+        </div>
+        <div class="math-card">
+          <h4>LayerNorm Rationale</h4>
+          <div class="formula">
+            ||E<sub>token</sub>||₂ ≈ <strong>1</strong> &nbsp;(by LLM training)<br/><br/>
+            LayerNorm(<em>Vₛ</em>) → ||<em>Vₛ</em>||₂ ≈ 1<br/><br/>
+            prevents somatic token from dominating<br/>cross-attention logits
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="sep"></div>
+
+<!-- ══ PIPELINE ══ -->
+<section class="pipeline-section" id="architecture">
+  <div class="container">
+    <div class="section-header">
+      <div class="section-tag">Data Flow</div>
+      <h2 class="section-title">End-to-End Pipeline</h2>
+      <p class="section-lead">From raw hardware bits to LLM-generated language in under 200ms.</p>
+    </div>
+    <div class="pipeline-flow">
+      <div class="pipeline-step">
+        <div class="pipeline-step-num">01 / Hardware</div>
+        <div class="pipeline-step-title">Sensor Acquisition</div>
+        <div class="pipeline-step-body">I²C bus reads at 100Hz. BMS returns raw mV/mA. IMU returns 16-bit signed integers scaled to m/s² and rad/s. TMP117 returns °C via 16-bit register.</div>
+      </div>
+      <div class="pipeline-arrow">→</div>
+      <div class="pipeline-step">
+        <div class="pipeline-step-num">02 / Layer 1</div>
+        <div class="pipeline-step-title">State Vector S ∈ ℝ¹¹</div>
+        <div class="pipeline-step-body">Floating-point normalization. Written to a <code>std::mutex</code>-guarded struct. Survival threshold check runs before lock acquisition.</div>
+      </div>
+      <div class="pipeline-arrow">→</div>
+      <div class="pipeline-step">
+        <div class="pipeline-step-num">03 / Layer 2</div>
+        <div class="pipeline-step-title">Projection φ(S) → Vₛ ∈ ℝ⁴⁰⁹⁶</div>
+        <div class="pipeline-step-body">LibTorch MLP forward pass. Input from <code>snapshot()</code>. LayerNorm on output. <code>torch::NoGradGuard</code> for inference efficiency.</div>
+      </div>
+      <div class="pipeline-arrow">→</div>
+      <div class="pipeline-step">
+        <div class="pipeline-step-num">04 / Bridge</div>
+        <div class="pipeline-step-title">llama_batch.embd injection</div>
+        <div class="pipeline-step-body">Tensor moved to CPU, pointer passed to <code>llama_batch</code> with <code>embd</code> set. KV cache cleared, somatic decoded at pos=0.</div>
+      </div>
+      <div class="pipeline-arrow">→</div>
+      <div class="pipeline-step">
+        <div class="pipeline-step-num">05 / Layer 3</div>
+        <div class="pipeline-step-title">Autoregressive Generation</div>
+        <div class="pipeline-step-body">Text tokens decoded at positions 1…N. Sampler chain: temperature → top-p → dist. Generation stops at EOS or <code>max_new_tokens</code>.</div>
+      </div>
+      <div class="pipeline-arrow">→</div>
+      <div class="pipeline-step">
+        <div class="pipeline-step-num">06 / Output</div>
+        <div class="pipeline-step-title">Language Interface</div>
+        <div class="pipeline-step-body">UTF-8 string structurally conditioned on physical state. The body shape the words. Loops at 5Hz. Stdout + optional Telegram debug feed.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="sep"></div>
+
+<!-- ══ HARDWARE ══ -->
+<section class="hw-section" id="hardware">
+  <div class="container">
+    <div class="section-header">
+      <div class="section-tag">Hardware Project</div>
+      <h2 class="section-title">Physical Substrate</h2>
+      <p class="section-lead">Three sensor families map the body. All connected via I²C on a shared bus with distinct addresses.</p>
+    </div>
+    <div class="hw-grid">
+      <div class="hw-card" style="--accent:var(--cyan)">
+        <div class="hw-card-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+        </div>
+        <h4>Battery Management</h4>
+        <div class="hw-part">Texas Instruments BQ34Z100-G1</div>
+        <p>Full-pack fuel gauge via I²C. Reports voltage at reg 0x08 (mV resolution) and signed current at reg 0x0A. Critical threshold: 10.5V triggers survival callback in hardware thread, independent of cognitive loop.</p>
+      </div>
+      <div class="hw-card" style="--accent:var(--purple)">
+        <div class="hw-card-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
+        </div>
+        <h4>Inertial Measurement Unit</h4>
+        <div class="hw-part">InvenSense ICM-42688-P</div>
+        <p>6-axis MEMS sensor. Accelerometer ±16g at 16-bit, gyroscope ±2000 dps at 16-bit. Sampled at 100Hz. Gravity vector at (0, 0, −9.81) m/s² when upright provides baseline orientation reference.</p>
+      </div>
+      <div class="hw-card" style="--accent:var(--orange)">
+        <div class="hw-card-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"/></svg>
+        </div>
+        <h4>Thermal Sensing</h4>
+        <div class="hw-part">Texas Instruments TMP117</div>
+        <p>±0.1°C accuracy, 16-bit resolution (0.0078125°C/LSB). Monitors silicon die temperature and both motor windings. Critical threshold: 85°C triggers immediate power reduction. Three units on shared I²C bus with address selection.</p>
+      </div>
+      <div class="hw-card" style="--accent:var(--green)">
+        <div class="hw-card-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><rect x="2" y="2" width="20" height="20" rx="2"/><path d="M7 12h10M12 7v10"/></svg>
+        </div>
+        <h4>Compute Platform</h4>
+        <div class="hw-part">Raspberry Pi 5 / Jetson Nano</div>
+        <p>I²C bus on GPIO pins 3 (SDA) and 5 (SCL). CPU inference for LLM (Pi 5 @ ~0.3 tok/s), GPU inference on Jetson Nano (CUDA). Both LibTorch and llama.cpp compile natively on ARM64.</p>
+      </div>
+      <div class="hw-card" style="--accent:var(--cyan)">
+        <div class="hw-card-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><path d="M9 3H5a2 2 0 0 0-2 2v4m6-6h10a2 2 0 0 1 2 2v4M9 3v18m0 0h10a2 2 0 0 0 2-2v-4M9 21H5a2 2 0 0 1-2-2v-4m0 0h18"/></svg>
+        </div>
+        <h4>Actuation Bus</h4>
+        <div class="hw-part">PWM via PCA9685 / GPIO</div>
+        <p>Motor speed control through hardware PWM. Survival callback can directly assert GPIO overrides at the hardware thread level, bypassing any LLM-generated motor commands. Physical safety is architecturally separate from cognition.</p>
+      </div>
+      <div class="hw-card" style="--accent:var(--purple)">
+        <div class="hw-card-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+        </div>
+        <h4>Power Architecture</h4>
+        <div class="hw-part">2S–4S LiPo / LiFePO₄</div>
+        <p>3-cell LiPo nominal 11.1V (full 12.6V, critical 10.5V). Separate 5V regulated rail for compute. Current sensor monitors drain patterns. High-current draw events are flagged in the somatic state vector as metabolic load signals.</p>
+      </div>
+    </div>
+    <div class="wiring-block">
+<span class="comment">// I²C wiring — Raspberry Pi GPIO header</span>
+<span class="pin">SDA (GPIO2, pin 3)</span>  <span class="net">──────────────────────────────────────────────</span>  <span class="comment">shared bus</span>
+                      <span class="net">├──</span> <span class="pin">BMS  (BQ34Z100, addr 0x55)</span>
+                      <span class="net">├──</span> <span class="pin">IMU  (ICM-42688-P, addr 0x68)</span>
+                      <span class="net">└──</span> <span class="pin">TEMP₀ (TMP117, addr 0x48)  TEMP₁ (0x49)  TEMP₂ (0x4A)</span>
+
+<span class="pin">SCL (GPIO3, pin 5)</span>  <span class="net">──</span>  same bus, 400kHz Fast Mode
+
+<span class="pin">3.3V (pin 1)</span>  <span class="net">──</span>  all sensor VCC lines via 4.7kΩ pull-ups on SDA/SCL
+<span class="pin">GND  (pin 6)</span>  <span class="net">──</span>  all sensor GND lines
+
+<span class="comment">// IMU SPI alternative (for higher sampling rates &gt;400Hz)</span>
+<span class="pin">MOSI (GPIO10) / MISO (GPIO9) / SCLK (GPIO11) / CS (GPIO8)</span>
+    </div>
+  </div>
+</section>
+
+<div class="sep"></div>
+
+<!-- ══ DEVELOPMENT ══ -->
+<section class="dev-section" id="development">
+  <div class="container">
+    <div class="section-header">
+      <div class="section-tag">Getting Started</div>
+      <h2 class="section-title">Build & Development</h2>
+      <p class="section-lead">From zero to a running system. Linux x86-64 or ARM64 (Raspberry Pi / Jetson).</p>
+    </div>
+    <div class="dev-grid">
+      <div class="dev-card">
+        <div class="dev-card-header">
+          <div class="dev-card-dots"><div class="dev-card-dot" style="background:#ef4444"></div><div class="dev-card-dot" style="background:#eab308"></div><div class="dev-card-dot" style="background:#22c55e"></div></div>
+          <span>bootstrap.sh — Full setup</span>
+        </div>
+        <pre><span class="token-comment"># 1. Clone and build llama.cpp (CPU or CUDA)</span>
+git clone https://github.com/ggml-org/llama.cpp
+cmake -S llama.cpp -B llama.cpp/build <span class="token-keyword">\</span>
+  -DGGML_CUDA=OFF  <span class="token-comment"># ON if NVIDIA GPU available</span>
+  -DCMAKE_BUILD_TYPE=Release
+cmake --build llama.cpp/build -j$(nproc)
+
+<span class="token-comment"># 2. Install PyTorch (CPU build)</span>
+pip install torch --index-url <span class="token-keyword">\</span>
+  https://download.pytorch.org/whl/cpu
+
+<span class="token-comment"># 3. Train the somatic projector</span>
+pip install sentence-transformers
+python train/train_projector.py <span class="token-keyword">\</span>
+  --epochs 200 --batch-size 32 <span class="token-keyword">\</span>
+  --output weights/somatic_projector.pt
+
+<span class="token-comment"># 4. Build the C++ binary</span>
+TORCH_CMAKE=$(python3 -c <span class="token-string">'import torch; \
+  print(torch.utils.cmake_prefix_path)'</span>)
+cmake -S . -B build <span class="token-keyword">\</span>
+  -DTORCH_DIR=$TORCH_CMAKE <span class="token-keyword">\</span>
+  -DLLAMA_DIR=../llama.cpp
+cmake --build build -j$(nproc)
+
+<span class="token-comment"># 5. Download a model and run</span>
+./build/latent_somatic models/llama3-8b-q4.gguf</pre>
+      </div>
+      <div class="dev-card">
+        <div class="dev-card-header">
+          <div class="dev-card-dots"><div class="dev-card-dot" style="background:#ef4444"></div><div class="dev-card-dot" style="background:#eab308"></div><div class="dev-card-dot" style="background:#22c55e"></div></div>
+          <span>Development Checklist</span>
+        </div>
+        <div style="padding:24px">
+          <div class="timeline">
+            <div class="tl-item"><div class="tl-num">01</div><div class="tl-body"><h4>Build toolchain</h4><p>GCC ≥ 13, CMake ≥ 3.20 (install via <code>pip install cmake</code>), ninja. LibTorch via PyTorch wheel.</p></div></div>
+            <div class="tl-item"><div class="tl-num">02</div><div class="tl-body"><h4>llama.cpp dependency</h4><p>Clone alongside project root. Build with <code>-DGGML_CUDA=ON</code> if NVIDIA GPU available. Library at <code>build/bin/libllama.so</code>.</p></div></div>
+            <div class="tl-item"><div class="tl-num">03</div><div class="tl-body"><h4>Sensor training data</h4><p>Extend <code>CANONICAL_PAIRS</code> in <code>train_projector.py</code> or provide a JSONL file via <code>--extra-data</code>. Each pair: <code>{sensor: {...}, text: "..."}</code>.</p></div></div>
+            <div class="tl-item"><div class="tl-num">04</div><div class="tl-body"><h4>I²C hardware bridge</h4><p>Replace mock readings in <code>HWInterface::read_sensors_i2c()</code>. Install <code>libi2c-dev</code>. Test with <code>i2cdetect -y 1</code>.</p></div></div>
+            <div class="tl-item"><div class="tl-num">05</div><div class="tl-body"><h4>LLM model</h4><p>Any GGUF-format model. Recommended: <code>Meta-Llama-3-8B-Instruct-Q4_K_M.gguf</code>. Adjust <code>n_gpu_layers</code> in <code>LLMConfig</code> for your VRAM.</p></div></div>
+            <div class="tl-item"><div class="tl-num">06</div><div class="tl-body"><h4>Runtime environment</h4><p>Set <code>LD_LIBRARY_PATH</code> to include <code>llama.cpp/build/bin</code>. Add to <code>.bashrc</code> for persistence.</p></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="sep"></div>
+
+<!-- ══ RESEARCH ══ -->
+<section class="research-section" id="research">
+  <div class="container">
+    <div class="section-header">
+      <div class="section-tag">Scientific Context</div>
+      <h2 class="section-title">Related Research</h2>
+      <p class="section-lead">LSF is architecturally aligned with the emerging VLA and sensor-aware LLM literature. The industry arrived at the same conclusion independently.</p>
+    </div>
+    <div class="paper-grid">
+      <div class="paper-card">
+        <div class="paper-tag">IMU / Motion</div>
+        <h4>LLaSA — Sensor-Aware LLM for IMU Data</h4>
+        <p>Introduces a projection-layer architecture that maps raw gyroscope/accelerometer streams directly into the LLM's shared representation space, bypassing textual serialization. Demonstrates that temporal relationships destroyed by tokenization are preserved when embedding natively.</p>
+        <div class="paper-year">2025</div>
+      </div>
+      <div class="paper-card">
+        <div class="paper-tag">Multi-modal / Robotics</div>
+        <h4>OmniVLA — Unifying Multi-Sensor Perception</h4>
+        <p>Vision-Language-Action model integrating thermal, acoustic, and mmWave radar sensors alongside RGB video. Per-sensor MLP modules project each modality into shared token space. Proves cross-attention over heterogeneous physical inputs improves manipulation success rate dramatically over visual-only baselines.</p>
+        <div class="paper-year">Late 2025</div>
+      </div>
+      <div class="paper-card">
+        <div class="paper-tag">Contrastive Alignment</div>
+        <h4>SensorLLM — Aligning LLMs with Motion Sensors</h4>
+        <p>Formalizes the tokenizer-incompatibility problem: a character-tokenized "9.81" loses physical magnitude entirely. Trains a sensor embedding space via contrastive learning to align time-series sensor signals with semantic concepts — the exact technique used in LSF's training pipeline.</p>
+        <div class="paper-year">2024–2025</div>
+      </div>
+      <div class="paper-card">
+        <div class="paper-tag">Foundation / Multimodal</div>
+        <h4>CLIP — Contrastive Language-Image Pretraining</h4>
+        <p>OpenAI's foundational work on cross-modal contrastive alignment. The InfoNCE symmetric loss and learned temperature τ used in LSF's <code>train_projector.py</code> are direct applications of CLIP's methodology, adapted from visual patches to physical sensor vectors.</p>
+        <div class="paper-year">Radford et al. 2021</div>
+      </div>
+      <div class="paper-card">
+        <div class="paper-tag">LLM Architecture</div>
+        <h4>LLaVA — Large Language and Vision Assistant</h4>
+        <p>The technical mechanism used in LSF (injecting non-token embeddings into the KV cache via <code>llama_batch.embd</code>) is the same mechanism LLaVA uses to inject visual patch embeddings. LSF extends this pattern from 2D visual space to 11-dimensional physical sensor space.</p>
+        <div class="paper-year">Liu et al. 2023</div>
+      </div>
+      <div class="paper-card">
+        <div class="paper-tag">LSF Research Direction</div>
+        <h4>Proprioceptive Language — Open Questions</h4>
+        <p>LSF's novel contribution: using somatic injection not to command actuators (robotics) but to ground the LLM's self-model in real physical state — enabling genuine homeostatic language. The system's words are structurally conditioned on whether it is falling, overheating, or starving for power.</p>
+        <div class="paper-year">This project, 2025</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="sep"></div>
+
+<!-- ══ API ══ -->
+<section class="api-section" id="api">
+  <div class="container">
+    <div class="section-header">
+      <div class="section-tag">Reference</div>
+      <h2 class="section-title">API Reference</h2>
+      <p class="section-lead">C++ public interfaces and Python training API.</p>
+    </div>
+    <div class="api-grid">
+      <div class="api-row header">
+        <div class="api-cell">Symbol</div>
+        <div class="api-cell">Type</div>
+        <div class="api-cell">Description</div>
+      </div>
+      <div class="api-row">
+        <div class="api-cell"><code>HWInterface(cb)</code></div>
+        <div class="api-cell"><span class="badge badge-cpp">C++</span></div>
+        <div class="api-cell">Construct hardware interface. Optional <code>SurvivalCallback</code> fired on critical thresholds, lock-free.</div>
+      </div>
+      <div class="api-row">
+        <div class="api-cell"><code>hw.start()</code></div>
+        <div class="api-cell"><span class="badge badge-cpp">C++</span></div>
+        <div class="api-cell">Starts background 100Hz sensor polling thread. Opens I²C bus; falls back to sinusoidal mock data if unavailable.</div>
+      </div>
+      <div class="api-row">
+        <div class="api-cell"><code>hw.snapshot()</code></div>
+        <div class="api-cell"><span class="badge badge-cpp">C++</span></div>
+        <div class="api-cell">Returns a thread-safe copy of the latest <code>HardwareState</code> struct (11 floats).</div>
+      </div>
+      <div class="api-row">
+        <div class="api-cell"><code>project_state(S, dev, jit, nn)</code></div>
+        <div class="api-cell"><span class="badge badge-cpp">C++</span></div>
+        <div class="api-cell">Projects <code>HardwareState</code> → <code>torch::Tensor[1, 4096]</code>. Uses TorchScript module if available, nn::Module fallback.</div>
+      </div>
+      <div class="api-row">
+        <div class="api-cell"><code>llm.generate(sv, dim, prompt)</code></div>
+        <div class="api-cell"><span class="badge badge-cpp">C++</span></div>
+        <div class="api-cell">Full inference pass. Injects somatic vector as token-0, then appends tokenized prompt. Returns generated UTF-8 string.</div>
+      </div>
+      <div class="api-row">
+        <div class="api-cell"><code>llm.embed_text(text)</code></div>
+        <div class="api-cell"><span class="badge badge-cpp">C++</span></div>
+        <div class="api-cell">Returns <code>std::vector&lt;float&gt;</code> of size <code>n_embd</code> — the sequence embedding for a text string. Useful for alignment debugging.</div>
+      </div>
+      <div class="api-row">
+        <div class="api-cell"><code>train_projector.py</code></div>
+        <div class="api-cell"><span class="badge badge-py">Python</span></div>
+        <div class="api-cell"><code>--epochs N --batch-size N --augment N --extra-data path.jsonl --output weights/proj.pt</code></div>
+      </div>
+      <div class="api-row">
+        <div class="api-cell"><code>--eval-only</code></div>
+        <div class="api-cell"><span class="badge badge-py">Python</span></div>
+        <div class="api-cell">Load saved projector and print cosine similarity scores for test states. Requires <code>weights/somatic_projector_adapter.pth</code>.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══ FOOTER ══ -->
+<footer>
+  <div class="container">
+    <div class="footer-grid">
+      <div>
+        <div class="footer-logo">
+          <img src="assets/FELogo_nav.png" alt="LSF"/>
+          <span>Latent-Somatic Fusion</span>
+        </div>
+        <p class="footer-tagline">An open research platform for grounding large language models in continuous physical reality. The body shapes the words.</p>
+      </div>
+      <div class="footer-links">
+        <a href="#theory">Theory</a>
+        <a href="#hardware">Hardware</a>
+        <a href="#development">Build Guide</a>
+        <a href="#api">API Reference</a>
+        <a href="simulator.html">Simulator</a>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <span class="footer-copy">// Project Latent-Somatic Fusion v2.0</span>
+      <span class="footer-copy">C++ / LibTorch / llama.cpp / PyTorch</span>
+    </div>
+  </div>
+</footer>
+
+<script>
+// Active nav link on scroll
+const sections = document.querySelectorAll('section[id], div[id]')
+const links = document.querySelectorAll('.nav-links a')
+const observer = new IntersectionObserver(entries => {
+  entries.forEach(e => {
+    if (e.isIntersecting) {
+      const id = e.target.id
+      links.forEach(l => { l.classList.toggle('active', l.getAttribute('href') === '#'+id) })
+    }
+  })
+}, { threshold: .2 })
+sections.forEach(s => observer.observe(s))
+</script>
+</body>
+</html>

@@ -1,0 +1,1611 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>LSF Simulator — Entity Body</title>
+<link rel="icon" type="image/x-icon" href="assets/favicon.ico"/>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;800&family=Share+Tech+Mono&display=swap" rel="stylesheet"/>
+<style>
+:root{
+  --bg:#030d1c;--bg2:#071828;--bg3:#0d2040;--bg4:#112248;
+  --cyan:#00cfff;--cyan2:#00a8d4;--purple:#7040e8;--purple2:#9060ff;
+  --green:#22c55e;--red:#ef4444;--orange:#f97316;--yellow:#eab308;
+  --text:#e2e8f0;--text2:#94a3b8;--text3:#475569;
+  --border:rgba(0,207,255,.14);--border2:rgba(0,207,255,.07);
+  --mono:'Share Tech Mono',monospace;--head:'Orbitron',sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+::-webkit-scrollbar{width:5px;height:5px}::-webkit-scrollbar-track{background:var(--bg)}::-webkit-scrollbar-thumb{background:var(--bg3)}
+body{background:var(--bg);color:var(--text);font-family:var(--mono);font-size:12px;height:100vh;overflow:hidden;display:flex;flex-direction:column}
+
+/* ── topbar ── */
+#topbar{height:46px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:0;flex-shrink:0;background:rgba(3,13,28,.95);backdrop-filter:blur(16px);z-index:50}
+.tb-logo{height:100%;display:flex;align-items:center;gap:10px;padding:0 20px;border-right:1px solid var(--border)}
+.tb-logo img{height:22px}
+.tb-logo span{color:var(--cyan);letter-spacing:.15em;font-size:11px;text-transform:uppercase}
+.tb-sep{width:1px;height:100%;background:var(--border)}
+.tb-info{padding:0 18px;display:flex;align-items:center;gap:16px;border-right:1px solid var(--border)}
+.tb-badge{display:flex;align-items:center;gap:6px;font-size:10px;color:var(--text2);letter-spacing:.08em}
+.tb-badge .dot{width:7px;height:7px;border-radius:50%}
+.dot-green{background:var(--green);box-shadow:0 0 6px var(--green);animation:blink 2s infinite}
+.dot-red{background:var(--red);box-shadow:0 0 6px var(--red)}
+.dot-yellow{background:var(--yellow);box-shadow:0 0 6px var(--yellow)}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
+.tb-right{margin-left:auto;display:flex;align-items:center;gap:0}
+.tb-btn{height:46px;padding:0 18px;display:flex;align-items:center;gap:7px;font-family:var(--head);font-size:10px;letter-spacing:.1em;text-transform:uppercase;cursor:pointer;border:none;background:transparent;color:var(--text2);border-left:1px solid var(--border);transition:color .15s,background .15s}
+.tb-btn:hover{color:var(--cyan);background:rgba(0,207,255,.05)}
+.tb-btn.active{color:var(--cyan);background:rgba(0,207,255,.08)}
+.tb-btn.danger{color:var(--red)}.tb-btn.danger:hover{background:rgba(239,68,68,.08)}
+a.tb-link{text-decoration:none}
+
+/* ── main layout ── */
+#main{flex:1;display:grid;grid-template-columns:260px 1fr 300px;grid-template-rows:1fr;overflow:hidden}
+
+/* ── panels ── */
+.panel{border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
+.panel:last-child{border-right:none}
+.panel-header{padding:10px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;background:var(--bg2)}
+.panel-title{color:var(--cyan);letter-spacing:.12em;font-size:10px;text-transform:uppercase}
+.panel-sub{color:var(--text3);font-size:10px}
+.panel-body{flex:1;overflow-y:auto;overflow-x:hidden}
+
+/* ── sensor gauges ── */
+.sensor-group{padding:12px 16px;border-bottom:1px solid var(--border2)}
+.sg-label{color:var(--text3);font-size:9px;letter-spacing:.15em;text-transform:uppercase;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between}
+.sg-label .sg-unit{color:var(--text3);font-size:9px}
+
+/* voltage gauge */
+.volt-gauge{position:relative;height:52px;display:flex;align-items:center;gap:12px}
+.volt-arc{width:52px;height:52px;flex-shrink:0}
+.volt-value{font-size:18px;color:var(--green);letter-spacing:-.02em}
+.volt-label{font-size:9px;color:var(--text3);margin-top:2px}
+.volt-warn{font-size:9px;color:var(--yellow);margin-top:2px;display:none}
+
+/* bar gauge */
+.bar-gauge{display:flex;flex-direction:column;gap:5px}
+.bg-row{display:grid;grid-template-columns:60px 1fr 44px;align-items:center;gap:8px}
+.bg-label{font-size:9px;color:var(--text2)}
+.bg-bar{height:6px;background:var(--bg3);border-radius:3px;overflow:hidden;position:relative}
+.bg-fill{height:100%;border-radius:3px;transition:width .3s ease}
+.bg-val{font-size:10px;color:var(--text);text-align:right}
+
+/* IMU visualizer */
+#imu-canvas{width:100%;height:130px;display:block}
+
+/* gyro rings */
+.gyro-display{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;padding:12px 0}
+.gyro-ring-wrap{display:flex;flex-direction:column;align-items:center;gap:4px}
+.gyro-axis{font-size:9px;color:var(--text3);letter-spacing:.1em}
+.gyro-val{font-size:11px;color:var(--purple2)}
+.gyro-ring-svg{width:44px;height:44px}
+
+/* ── center: body ── */
+#body-panel{background:var(--bg);display:flex;flex-direction:column}
+#body-view{flex:1;position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center}
+#body-svg{width:auto;height:85%;max-height:520px}
+.body-label{position:absolute;font-size:10px;letter-spacing:.08em;pointer-events:none}
+
+/* somatic heatmap */
+#somatic-row{height:80px;border-top:1px solid var(--border);flex-shrink:0;display:flex;flex-direction:column}
+.sr-header{padding:6px 16px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border2);flex-shrink:0}
+.sr-title{font-size:9px;color:var(--cyan);letter-spacing:.12em;text-transform:uppercase}
+.sr-dim{font-size:9px;color:var(--text3)}
+#heatmap-canvas{width:100%;height:54px;display:block}
+
+/* scenarios bar */
+#scenarios{height:46px;border-top:1px solid var(--border);display:flex;align-items:center;gap:8px;padding:0 16px;flex-shrink:0;background:var(--bg2)}
+.sc-label{font-size:9px;color:var(--text3);letter-spacing:.1em;text-transform:uppercase;flex-shrink:0;margin-right:4px}
+.sc-btn{height:28px;padding:0 12px;border:1px solid var(--border);background:transparent;color:var(--text2);font-family:var(--mono);font-size:10px;border-radius:3px;cursor:pointer;letter-spacing:.08em;transition:all .15s;flex-shrink:0}
+.sc-btn:hover{border-color:var(--cyan);color:var(--cyan);background:rgba(0,207,255,.06)}
+.sc-btn.active{border-color:var(--cyan);color:var(--cyan);background:rgba(0,207,255,.1)}
+.sc-btn.danger.active{border-color:var(--red);color:var(--red);background:rgba(239,68,68,.1)}
+.sc-btn.warn.active{border-color:var(--orange);color:var(--orange);background:rgba(249,115,22,.1)}
+
+/* ── right: cognitive panel ── */
+#cog-panel{display:flex;flex-direction:column}
+/* status cards */
+.stat-cards{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--border);flex-shrink:0}
+.stat-card{background:var(--bg2);padding:12px 14px}
+.sc-val{font-size:20px;font-family:var(--head);letter-spacing:-.02em}
+.sc-lbl{font-size:9px;color:var(--text3);letter-spacing:.1em;text-transform:uppercase;margin-top:3px}
+
+/* layer flow */
+.layer-flow{padding:12px 14px;border-bottom:1px solid var(--border);flex-shrink:0}
+.lf-title{font-size:9px;color:var(--text3);letter-spacing:.12em;text-transform:uppercase;margin-bottom:8px}
+.lf-step{display:flex;align-items:center;gap:8px;padding:5px 0}
+.lf-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.lf-text{font-size:10px;color:var(--text2)}
+.lf-arrow{color:var(--text3);font-size:10px;margin-left:16px;display:block}
+.lf-latency{margin-left:auto;font-size:9px;color:var(--text3)}
+
+/* LLM console */
+#llm-console{flex:1;overflow-y:auto;padding:14px}
+.llm-entry{margin-bottom:14px;border-left:2px solid var(--border);padding-left:10px}
+.llm-ts{font-size:9px;color:var(--text3);margin-bottom:4px}
+.llm-state{font-size:9px;color:var(--purple2);margin-bottom:4px;letter-spacing:.05em}
+.llm-text{font-size:12px;color:var(--text);line-height:1.6}
+.llm-entry.warn .llm-text{color:var(--orange)}
+.llm-entry.critical .llm-text{color:var(--red)}
+.llm-cursor{display:inline-block;width:7px;height:12px;background:var(--cyan);vertical-align:middle;animation:blink 1s infinite}
+
+/* alert banner */
+#alert-banner{position:fixed;top:46px;left:0;right:0;z-index:99;padding:8px 20px;display:flex;align-items:center;gap:10px;font-size:11px;letter-spacing:.08em;display:none}
+#alert-banner.show{display:flex}
+#alert-banner.critical{background:rgba(239,68,68,.15);border-bottom:1px solid rgba(239,68,68,.3);color:var(--red)}
+#alert-banner.warn{background:rgba(249,115,22,.12);border-bottom:1px solid rgba(249,115,22,.25);color:var(--orange)}
+
+/* grid overlay */
+body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(rgba(0,207,255,.025) 1px,transparent 1px),linear-gradient(90deg,rgba(0,207,255,.025) 1px,transparent 1px);background-size:32px 32px;pointer-events:none;z-index:0}
+
+/* ── tabs ── */
+.tab-bar{display:flex;border-bottom:1px solid var(--border);flex-shrink:0;background:var(--bg2)}
+.tab-btn{flex:1;height:34px;display:flex;align-items:center;justify-content:center;gap:6px;font-family:var(--head);font-size:9px;letter-spacing:.12em;text-transform:uppercase;cursor:pointer;border:none;background:transparent;color:var(--text3);border-bottom:2px solid transparent;transition:color .15s,border-color .15s}
+.tab-btn:hover{color:var(--text2)}
+.tab-btn.active{color:var(--cyan);border-bottom-color:var(--cyan)}
+.tab-pane{display:none;flex:1;flex-direction:column;overflow:hidden;min-height:0}
+.tab-pane.active{display:flex}
+
+/* ── chat ── */
+#chat-messages{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:12px;min-height:0}
+.msg{display:flex;flex-direction:column;gap:4px;max-width:90%}
+.msg-user{align-self:flex-end;align-items:flex-end}
+.msg-entity{align-self:flex-start;align-items:flex-start}
+.msg-bubble{padding:9px 13px;border-radius:6px;font-size:12px;line-height:1.6;word-break:break-word}
+.msg-user .msg-bubble{background:rgba(0,207,255,.12);border:1px solid rgba(0,207,255,.25);color:var(--text)}
+.msg-entity .msg-bubble{background:rgba(112,64,232,.1);border:1px solid rgba(112,64,232,.25);color:var(--text)}
+.msg-entity.critical .msg-bubble{border-color:rgba(239,68,68,.35);background:rgba(239,68,68,.07)}
+.msg-entity.warn .msg-bubble{border-color:rgba(249,115,22,.3);background:rgba(249,115,22,.06)}
+.msg-meta{font-size:9px;color:var(--text3);letter-spacing:.06em}
+.msg-state-tag{font-size:9px;color:var(--purple2);margin-bottom:2px}
+.typing-indicator{display:flex;align-items:center;gap:4px;padding:9px 13px;background:rgba(112,64,232,.08);border:1px solid rgba(112,64,232,.2);border-radius:6px;align-self:flex-start}
+.typing-dot{width:5px;height:5px;border-radius:50%;background:var(--purple2);animation:tdot 1.2s infinite}
+.typing-dot:nth-child(2){animation-delay:.2s}
+.typing-dot:nth-child(3){animation-delay:.4s}
+@keyframes tdot{0%,80%,100%{opacity:.3;transform:scale(.8)}40%{opacity:1;transform:scale(1)}}
+#chat-input-area{border-top:1px solid var(--border);padding:10px 12px;display:flex;gap:8px;align-items:center;flex-shrink:0;background:var(--bg2)}
+#chat-input{flex:1;background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:8px 12px;font-family:var(--mono);font-size:12px;color:var(--text);outline:none;resize:none;height:36px;line-height:1.4;transition:border-color .15s}
+#chat-input:focus{border-color:rgba(0,207,255,.4)}
+#chat-input::placeholder{color:var(--text3)}
+#chat-send{width:36px;height:36px;background:rgba(0,207,255,.12);border:1px solid rgba(0,207,255,.3);border-radius:4px;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--cyan);transition:background .15s;flex-shrink:0}
+#chat-send:hover{background:rgba(0,207,255,.22)}
+#chat-send svg{width:14px;height:14px}
+
+/* ── Hz slider ── */
+.hz-slider-wrap{display:flex;align-items:center;gap:7px;margin-left:auto;padding:0 14px;border-left:1px solid var(--border)}
+.hz-slider{-webkit-appearance:none;appearance:none;width:72px;height:3px;background:var(--bg3);border-radius:2px;outline:none;cursor:pointer}
+.hz-slider::-webkit-slider-thumb{-webkit-appearance:none;width:11px;height:11px;border-radius:50%;background:var(--cyan);cursor:pointer;box-shadow:0 0 5px var(--cyan)}
+.hz-label{font-size:9px;color:var(--text3);letter-spacing:.1em;text-transform:uppercase}
+.hz-readout{font-size:10px;color:var(--cyan);min-width:38px;letter-spacing:.05em}
+
+/* ── body figure ── */
+#body-figure-wrap{position:relative;height:85%;max-height:520px;display:inline-flex;align-items:center;justify-content:center}
+#body-img{height:100%;display:block;opacity:0.88;filter:drop-shadow(0 0 14px rgba(0,207,255,.22)) drop-shadow(0 0 5px rgba(112,64,232,.18));pointer-events:none}
+#body-overlay{position:absolute;top:0;left:0;width:100%;height:100%;cursor:crosshair}
+.region-label{position:absolute;left:50%;transform:translateX(-50%);bottom:8px;font-family:var(--mono);font-size:10px;color:var(--cyan);background:rgba(3,13,28,.85);border:1px solid var(--border);border-radius:3px;padding:4px 10px;pointer-events:none;letter-spacing:.08em;white-space:nowrap;display:none}
+</style>
+</head>
+<body>
+
+<!-- ══ ALERT ══ -->
+<div id="alert-banner">
+  <span id="alert-icon">⚠</span>
+  <span id="alert-msg">CRITICAL — Voltage below threshold</span>
+</div>
+
+<!-- ══ TOPBAR ══ -->
+<div id="topbar">
+  <div class="tb-logo">
+    <img src="assets/FELogo_nav.png" alt="LSF"/>
+    <span>Entity Simulator</span>
+  </div>
+  <div class="tb-sep"></div>
+  <div class="tb-info">
+    <div class="tb-badge"><div class="dot dot-yellow" id="hw-dot"></div><span id="hw-mode">MOCK HARDWARE</span></div>
+    <div class="tb-badge"><div class="dot dot-red" id="ws-dot"></div><span id="ws-mode">WS DISCONNECTED</span></div>
+    <div class="tb-badge"><div class="dot dot-red" id="proj-dot"></div><span id="proj-mode">PROJECTOR OFFLINE</span></div>
+  </div>
+  <div class="tb-right">
+    <button class="tb-btn active" id="btn-run" onclick="toggleRun()">
+      <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg>
+      RUNNING
+    </button>
+    <button class="tb-btn" id="btn-pause" onclick="toggleRun()">
+      <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+      PAUSE
+    </button>
+    <a href="index.html" class="tb-link"><button class="tb-btn">
+      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
+      DOCS
+    </button></a>
+  </div>
+</div>
+
+<!-- ══ MAIN ══ -->
+<div id="main">
+
+  <!-- ══ LEFT: SENSORS ══ -->
+  <div class="panel" id="sensor-panel">
+    <div class="panel-header">
+      <span class="panel-title">Layer 1 — Autonomic NS</span>
+      <span class="panel-sub" id="hz-counter">100 Hz</span>
+    </div>
+    <div class="panel-body">
+
+      <!-- Voltage -->
+      <div class="sensor-group">
+        <div class="sg-label"><span>POWER</span><span class="sg-unit">V / mA</span></div>
+        <div class="volt-gauge">
+          <svg class="volt-arc" id="volt-svg" viewBox="0 0 52 52">
+            <circle cx="26" cy="26" r="22" fill="none" stroke="var(--bg3)" stroke-width="4"/>
+            <circle cx="26" cy="26" r="22" fill="none" stroke="var(--green)" stroke-width="4"
+              stroke-dasharray="138" stroke-dashoffset="138" stroke-linecap="round"
+              transform="rotate(-90 26 26)" id="volt-arc-fill"/>
+          </svg>
+          <div>
+            <div class="volt-value" id="volt-val">--.-</div>
+            <div class="volt-label">VOLTAGE (V)</div>
+            <div class="volt-warn" id="volt-warn">⚠ BELOW THRESHOLD</div>
+          </div>
+        </div>
+        <div class="bar-gauge" style="margin-top:8px">
+          <div class="bg-row">
+            <span class="bg-label">Current</span>
+            <div class="bg-bar"><div class="bg-fill" id="curr-fill" style="background:var(--cyan);width:50%"></div></div>
+            <span class="bg-val" id="curr-val">----</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Temperature -->
+      <div class="sensor-group">
+        <div class="sg-label"><span>THERMAL</span><span class="sg-unit">°C</span></div>
+        <div class="bar-gauge">
+          <div class="bg-row">
+            <span class="bg-label">Silicon</span>
+            <div class="bg-bar"><div class="bg-fill" id="tsi-fill" style="background:var(--green);width:40%"></div></div>
+            <span class="bg-val" id="tsi-val">--</span>
+          </div>
+          <div class="bg-row">
+            <span class="bg-label">Motor L</span>
+            <div class="bg-bar"><div class="bg-fill" id="tml-fill" style="background:var(--green);width:35%"></div></div>
+            <span class="bg-val" id="tml-val">--</span>
+          </div>
+          <div class="bg-row">
+            <span class="bg-label">Motor R</span>
+            <div class="bg-bar"><div class="bg-fill" id="tmr-fill" style="background:var(--green);width:35%"></div></div>
+            <span class="bg-val" id="tmr-val">--</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- IMU Accelerometer -->
+      <div class="sensor-group">
+        <div class="sg-label"><span>ACCELEROMETER</span><span class="sg-unit">m/s²</span></div>
+        <canvas id="imu-canvas"></canvas>
+        <div class="bar-gauge" style="margin-top:6px">
+          <div class="bg-row">
+            <span class="bg-label">X</span>
+            <div class="bg-bar"><div class="bg-fill" id="ax-fill" style="background:var(--red);width:50%"></div></div>
+            <span class="bg-val" id="ax-val">--</span>
+          </div>
+          <div class="bg-row">
+            <span class="bg-label">Y</span>
+            <div class="bg-bar"><div class="bg-fill" id="ay-fill" style="background:var(--yellow);width:50%"></div></div>
+            <span class="bg-val" id="ay-val">--</span>
+          </div>
+          <div class="bg-row">
+            <span class="bg-label">Z</span>
+            <div class="bg-bar"><div class="bg-fill" id="az-fill" style="background:var(--cyan);width:85%"></div></div>
+            <span class="bg-val" id="az-val">--</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Gyroscope -->
+      <div class="sensor-group">
+        <div class="sg-label"><span>GYROSCOPE</span><span class="sg-unit">rad/s</span></div>
+        <div class="gyro-display">
+          <div class="gyro-ring-wrap">
+            <svg class="gyro-ring-svg" viewBox="0 0 44 44">
+              <circle cx="22" cy="22" r="18" fill="none" stroke="var(--bg3)" stroke-width="3"/>
+              <circle cx="22" cy="22" r="18" fill="none" stroke="var(--red)" stroke-width="3"
+                stroke-dasharray="113" stroke-dashoffset="113" stroke-linecap="round"
+                transform="rotate(-90 22 22)" id="gx-ring"/>
+            </svg>
+            <div class="gyro-val" id="gx-val">0.00</div>
+            <div class="gyro-axis">PITCH X</div>
+          </div>
+          <div class="gyro-ring-wrap">
+            <svg class="gyro-ring-svg" viewBox="0 0 44 44">
+              <circle cx="22" cy="22" r="18" fill="none" stroke="var(--bg3)" stroke-width="3"/>
+              <circle cx="22" cy="22" r="18" fill="none" stroke="var(--yellow)" stroke-width="3"
+                stroke-dasharray="113" stroke-dashoffset="113" stroke-linecap="round"
+                transform="rotate(-90 22 22)" id="gy-ring"/>
+            </svg>
+            <div class="gyro-val" id="gy-val">0.00</div>
+            <div class="gyro-axis">ROLL Y</div>
+          </div>
+          <div class="gyro-ring-wrap">
+            <svg class="gyro-ring-svg" viewBox="0 0 44 44">
+              <circle cx="22" cy="22" r="18" fill="none" stroke="var(--bg3)" stroke-width="3"/>
+              <circle cx="22" cy="22" r="18" fill="none" stroke="var(--purple2)" stroke-width="3"
+                stroke-dasharray="113" stroke-dashoffset="113" stroke-linecap="round"
+                transform="rotate(-90 22 22)" id="gz-ring"/>
+            </svg>
+            <div class="gyro-val" id="gz-val">0.00</div>
+            <div class="gyro-axis">YAW Z</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ══ CENTER: BODY ══ -->
+  <div class="panel" id="body-panel">
+    <div class="panel-header">
+      <span class="panel-title">Entity Body</span>
+      <span class="panel-sub" id="entity-state">NOMINAL</span>
+    </div>
+    <div id="body-view">
+      <div id="body-figure-wrap">
+        <img id="body-img" src="assets/AndroidFE_transparent.png" alt="Entity Body"/>
+        <canvas id="body-overlay"></canvas>
+        <div class="region-label" id="region-label"></div>
+      </div>
+      <!-- Legacy body-svg hidden but kept for JS refs that still animate spine/BMS/IMU nodes -->
+      <svg id="body-svg" viewBox="0 0 300 560" fill="none" xmlns="http://www.w3.org/2000/svg" style="display:none">
+        <defs>
+          <radialGradient id="aura" cx="50%" cy="40%" r="50%">
+            <stop offset="0%" stop-color="#7040e8" stop-opacity="0.15"/>
+            <stop offset="100%" stop-color="transparent"/>
+          </radialGradient>
+          <filter id="glow-s" x="-50%" y="-50%" width="200%" height="200%">
+            <feGaussianBlur stdDeviation="3" result="blur"/>
+            <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+          </filter>
+          <filter id="glow-m" x="-80%" y="-80%" width="260%" height="260%">
+            <feGaussianBlur stdDeviation="6" result="blur"/>
+            <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+          </filter>
+          <filter id="glow-l">
+            <feGaussianBlur stdDeviation="10" result="blur"/>
+            <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+          </filter>
+          <linearGradient id="body-grad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#00cfff" stop-opacity="0.6"/>
+            <stop offset="100%" stop-color="#7040e8" stop-opacity="0.4"/>
+          </linearGradient>
+          <linearGradient id="spine-grad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#7040e8"/>
+            <stop offset="100%" stop-color="#00cfff"/>
+          </linearGradient>
+          <clipPath id="body-clip">
+            <ellipse cx="150" cy="280" rx="140" ry="260"/>
+          </clipPath>
+        </defs>
+
+        <!-- Background aura -->
+        <ellipse cx="150" cy="250" rx="130" ry="240" fill="url(#aura)" id="body-aura"/>
+
+        <!-- Grid lines (subtle) -->
+        <g opacity="0.08" stroke="#00cfff" stroke-width="0.5">
+          <line x1="0" y1="140" x2="300" y2="140"/>
+          <line x1="0" y1="220" x2="300" y2="220"/>
+          <line x1="0" y1="340" x2="300" y2="340"/>
+          <line x1="0" y1="430" x2="300" y2="430"/>
+          <line x1="150" y1="0" x2="150" y2="560"/>
+        </g>
+
+        <!-- Head -->
+        <ellipse cx="150" cy="74" rx="38" ry="44" stroke="url(#body-grad)" stroke-width="1.5" opacity="0.8" filter="url(#glow-s)" id="head-outline"/>
+        <!-- Face features -->
+        <line x1="130" y1="68" x2="140" y2="68" stroke="#00cfff" stroke-width="1.5" opacity="0.6" id="eye-l"/>
+        <line x1="160" y1="68" x2="170" y2="68" stroke="#00cfff" stroke-width="1.5" opacity="0.6" id="eye-r"/>
+        <path d="M138 82 Q150 90 162 82" stroke="#00cfff" stroke-width="1.2" opacity="0.4"/>
+
+        <!-- Brain indicator (LLM node) -->
+        <circle cx="150" cy="58" r="12" fill="rgba(112,64,232,0.2)" stroke="var(--purple2)" stroke-width="1.2" filter="url(#glow-s)" id="brain-node"/>
+        <text x="150" y="62" text-anchor="middle" fill="var(--purple2)" font-size="8" font-family="'Share Tech Mono'" opacity="0.9">LLM</text>
+
+        <!-- Neck -->
+        <line x1="140" y1="118" x2="140" y2="138" stroke="url(#body-grad)" stroke-width="1.2" opacity="0.5"/>
+        <line x1="160" y1="118" x2="160" y2="138" stroke="url(#body-grad)" stroke-width="1.2" opacity="0.5"/>
+
+        <!-- Shoulders -->
+        <path d="M112 140 Q90 145 72 158" stroke="url(#body-grad)" stroke-width="1.5" opacity="0.7"/>
+        <path d="M188 140 Q210 145 228 158" stroke="url(#body-grad)" stroke-width="1.5" opacity="0.7"/>
+
+        <!-- Torso outline -->
+        <path d="M112 140 L100 180 L96 260 L104 320 L150 330 L196 320 L204 260 L200 180 L188 140 Z"
+          stroke="url(#body-grad)" stroke-width="1.5" fill="rgba(0,207,255,0.03)" opacity="0.9" filter="url(#glow-s)"/>
+
+        <!-- Ribcage lines -->
+        <g stroke="#00cfff" stroke-width="0.8" opacity="0.2">
+          <path d="M115 170 Q150 175 185 170"/>
+          <path d="M112 190 Q150 196 188 190"/>
+          <path d="M110 210 Q150 217 190 210"/>
+          <path d="M108 230 Q150 238 192 230"/>
+          <path d="M108 250 Q150 258 192 250"/>
+        </g>
+
+        <!-- BMS node (chest) -->
+        <rect x="126" y="195" width="48" height="36" rx="4" fill="rgba(0,207,255,0.08)" stroke="rgba(0,207,255,0.4)" stroke-width="1" filter="url(#glow-s)" id="bms-node"/>
+        <text x="150" y="210" text-anchor="middle" fill="#00cfff" font-size="7" font-family="'Share Tech Mono'" opacity="0.8">BMS</text>
+        <text x="150" y="224" text-anchor="middle" fill="#00cfff" font-size="10" font-family="'Share Tech Mono'" id="bms-display">--.-V</text>
+
+        <!-- Spine (data bus) -->
+        <line x1="150" y1="118" x2="150" y2="330" stroke="url(#spine-grad)" stroke-width="2"
+          stroke-dasharray="4 3" opacity="0.7" id="spine-line"/>
+
+        <!-- Left arm -->
+        <path d="M100 155 L72 225 L64 300 L60 360" stroke="url(#body-grad)" stroke-width="1.5" opacity="0.7"/>
+        <!-- Left hand -->
+        <circle cx="60" cy="368" r="12" stroke="#00cfff" stroke-width="1.2" fill="rgba(0,207,255,0.05)" filter="url(#glow-s)" id="hand-l"/>
+        <!-- Right arm -->
+        <path d="M200 155 L228 225 L236 300 L240 360" stroke="url(#body-grad)" stroke-width="1.5" opacity="0.7"/>
+        <!-- Right hand -->
+        <circle cx="240" cy="368" r="12" stroke="#00cfff" stroke-width="1.2" fill="rgba(0,207,255,0.05)" filter="url(#glow-s)" id="hand-r"/>
+
+        <!-- IMU node (abdomen) -->
+        <circle cx="150" cy="280" r="18" fill="rgba(112,64,232,0.12)" stroke="var(--purple2)" stroke-width="1.2" filter="url(#glow-s)" id="imu-node"/>
+        <text x="150" y="277" text-anchor="middle" fill="var(--purple2)" font-size="7" font-family="'Share Tech Mono'" opacity="0.8">IMU</text>
+        <text x="150" y="289" text-anchor="middle" fill="var(--purple2)" font-size="8" font-family="'Share Tech Mono'" id="imu-display">9.81</text>
+
+        <!-- Pelvis -->
+        <path d="M104 322 Q150 335 196 322 Q200 360 150 370 Q100 360 104 322 Z"
+          stroke="url(#body-grad)" stroke-width="1.2" fill="rgba(0,207,255,0.02)" opacity="0.7"/>
+
+        <!-- Left leg -->
+        <path d="M125 370 L118 440 L112 510" stroke="url(#body-grad)" stroke-width="1.5" opacity="0.7"/>
+        <!-- Left foot -->
+        <path d="M104 510 L120 510 L124 520 L100 520 Z" stroke="#00cfff" stroke-width="1" fill="rgba(0,207,255,0.05)" opacity="0.7"/>
+
+        <!-- Right leg -->
+        <path d="M175 370 L182 440 L188 510" stroke="url(#body-grad)" stroke-width="1.5" opacity="0.7"/>
+        <!-- Right foot -->
+        <path d="M196 510 L180 510 L176 520 L200 520 Z" stroke="#00cfff" stroke-width="1" fill="rgba(0,207,255,0.05)" opacity="0.7"/>
+
+        <!-- Knee joints -->
+        <circle cx="116" cy="440" r="5" stroke="#00cfff" stroke-width="1" fill="rgba(0,207,255,0.1)" id="knee-l"/>
+        <circle cx="184" cy="440" r="5" stroke="#00cfff" stroke-width="1" fill="rgba(0,207,255,0.1)" id="knee-r"/>
+
+        <!-- Temp sensors on body -->
+        <circle cx="130" cy="155" r="5" fill="rgba(249,115,22,0.3)" stroke="var(--orange)" stroke-width="1" id="temp-node-l" filter="url(#glow-s)"/>
+        <circle cx="170" cy="155" r="5" fill="rgba(249,115,22,0.3)" stroke="var(--orange)" stroke-width="1" id="temp-node-r" filter="url(#glow-s)"/>
+
+        <!-- Neural pulse points (animated) -->
+        <circle class="pulse-dot" cx="150" cy="135" r="3" fill="var(--cyan)" opacity="0" id="pulse-neck"/>
+        <circle class="pulse-dot" cx="150" cy="210" r="3" fill="var(--cyan)" opacity="0" id="pulse-chest"/>
+        <circle class="pulse-dot" cx="150" cy="280" r="3" fill="var(--purple)" opacity="0" id="pulse-core"/>
+        <circle class="pulse-dot" cx="150" cy="340" r="3" fill="var(--cyan)" opacity="0" id="pulse-pelvis"/>
+
+        <!-- Corner targeting reticles -->
+        <g stroke="rgba(0,207,255,0.3)" stroke-width="1">
+          <polyline points="4,4 4,14 14,4"/>
+          <polyline points="296,4 296,14 286,4"/>
+          <polyline points="4,556 4,546 14,556"/>
+          <polyline points="296,556 296,546 286,556"/>
+        </g>
+
+        <!-- Crosshair center -->
+        <circle cx="150" cy="280" r="2" fill="rgba(0,207,255,0.4)"/>
+        <line x1="144" y1="280" x2="138" y2="280" stroke="rgba(0,207,255,0.3)" stroke-width="0.8"/>
+        <line x1="156" y1="280" x2="162" y2="280" stroke="rgba(0,207,255,0.3)" stroke-width="0.8"/>
+        <line x1="150" y1="274" x2="150" y2="268" stroke="rgba(0,207,255,0.3)" stroke-width="0.8"/>
+        <line x1="150" y1="286" x2="150" y2="292" stroke="rgba(0,207,255,0.3)" stroke-width="0.8"/>
+
+      </svg>
+    </div>
+
+    <!-- Somatic heatmap -->
+    <div id="somatic-row">
+      <div class="sr-header">
+        <span class="sr-title">Layer 2 — Somatic Vector Vₛ</span>
+        <span class="sr-dim">ℝ⁴⁰⁹⁶ → sampled 256 bins</span>
+      </div>
+      <canvas id="heatmap-canvas"></canvas>
+    </div>
+
+    <!-- Scenario injector -->
+    <div id="scenarios">
+      <span class="sc-label">Inject:</span>
+      <button class="sc-btn active" id="sc-nominal" onclick="setScenario('nominal')">NOMINAL</button>
+      <button class="sc-btn warn" id="sc-lowbatt" onclick="setScenario('lowbatt')">LOW BATT</button>
+      <button class="sc-btn warn" id="sc-overheat" onclick="setScenario('overheat')">OVERHEAT</button>
+      <button class="sc-btn danger" id="sc-fall" onclick="setScenario('fall')">FALLING</button>
+      <button class="sc-btn danger" id="sc-spin" onclick="setScenario('spin')">SPINNING</button>
+      <button class="sc-btn warn" id="sc-heavyload" onclick="setScenario('heavyload')">HEAVY LOAD</button>
+      <div class="hz-slider-wrap">
+        <span class="hz-label">Hz</span>
+        <input type="range" id="hz-slider" class="hz-slider" min="0.2" max="20" step="0.2" value="5"
+          oninput="onHzSlider(this.value)"/>
+        <span class="hz-readout" id="hz-readout">5.0</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ RIGHT: COGNITIVE ══ -->
+  <div class="panel" id="cog-panel">
+    <div class="panel-header">
+      <span class="panel-title">Layer 3 — Cognitive Engine</span>
+      <span class="panel-sub" id="cog-hz">5 Hz</span>
+    </div>
+
+    <!-- Tab bar -->
+    <div class="tab-bar">
+      <button class="tab-btn active" id="tab-monitor" onclick="switchTab('monitor')">
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+        Monitor
+      </button>
+      <button class="tab-btn" id="tab-chat" onclick="switchTab('chat')">
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        Chat
+      </button>
+    </div>
+
+    <!-- MONITOR pane -->
+    <div class="tab-pane active" id="pane-monitor">
+      <div class="stat-cards">
+        <div class="stat-card">
+          <div class="sc-val" id="stat-hz" style="color:var(--cyan)">5.0</div>
+          <div class="sc-lbl">Cog Loop Hz</div>
+        </div>
+        <div class="stat-card">
+          <div class="sc-val" id="stat-tokens" style="color:var(--purple2)">0</div>
+          <div class="sc-lbl">Tokens Generated</div>
+        </div>
+        <div class="stat-card">
+          <div class="sc-val" id="stat-infms" style="color:var(--green)">--</div>
+          <div class="sc-lbl">Inf. Time (ms)</div>
+        </div>
+        <div class="stat-card">
+          <div class="sc-val" id="stat-align" style="color:var(--yellow)">0.00</div>
+          <div class="sc-lbl">Somatic Align</div>
+        </div>
+      </div>
+
+      <div class="layer-flow">
+        <div class="lf-title">Data Flow Trace</div>
+        <div class="lf-step">
+          <div class="lf-dot" style="background:var(--green)" id="dot-hw"></div>
+          <span class="lf-text">Hardware snapshot()</span>
+          <span class="lf-latency" id="lat-hw">0ms</span>
+        </div>
+        <span class="lf-arrow">↓</span>
+        <div class="lf-step">
+          <div class="lf-dot" style="background:var(--cyan)" id="dot-proj"></div>
+          <span class="lf-text">project_state() → Vₛ ∈ ℝ⁴⁰⁹⁶</span>
+          <span class="lf-latency" id="lat-proj">0ms</span>
+        </div>
+        <span class="lf-arrow">↓</span>
+        <div class="lf-step">
+          <div class="lf-dot" style="background:var(--purple2)" id="dot-inject"></div>
+          <span class="lf-text">llama_batch.embd inject</span>
+          <span class="lf-latency" id="lat-inject">0ms</span>
+        </div>
+        <span class="lf-arrow">↓</span>
+        <div class="lf-step">
+          <div class="lf-dot" style="background:var(--orange)" id="dot-gen"></div>
+          <span class="lf-text">Autoregressive generation</span>
+          <span class="lf-latency" id="lat-gen">0ms</span>
+        </div>
+      </div>
+
+      <div id="llm-console">
+        <div class="llm-entry">
+          <div class="llm-ts">SYSTEM // 00:00:00</div>
+          <div class="llm-state">→ INITIALIZING</div>
+          <div class="llm-text">Latent-Somatic Fusion simulator initialized. Sensor mock data active. Somatic projector loaded. Awaiting first cognitive cycle...<span class="llm-cursor"></span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CHAT pane -->
+    <div class="tab-pane" id="pane-chat">
+      <div id="chat-messages">
+        <div class="msg msg-entity">
+          <div class="msg-state-tag">ENTITY // ONLINE</div>
+          <div class="msg-bubble">
+            I am online. My sensors are active and my somatic projector is mapping my physical state into language space. You can ask me anything — about how I feel, what I perceive, or what I am.
+          </div>
+          <div class="msg-meta">00:00:00 · V=11.8V · T=45.0°C</div>
+        </div>
+      </div>
+      <div id="chat-input-area">
+        <input id="chat-input" type="text" placeholder="Talk to the entity..." autocomplete="off"
+          onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChat()}"/>
+        <button id="chat-send" onclick="sendChat()" title="Send">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ─────────────────────────────────────────────
+// State
+// ─────────────────────────────────────────────
+let t = 0;
+let running = true;
+let scenario = 'nominal';
+let totalTokens = 0;
+let cogCycle = 0;
+let COG_INTERVAL = 200; // 5 Hz — updated by Hz slider
+
+// Real tensor heatmap from server (null = use local fallback)
+let serverHeatmap = null;
+
+// Sensor state object
+const S = { voltage:11.8, current_ma:2000, temp_si:45, temp_ml:40, temp_mr:40,
+            ax:0, ay:0, az:-9.81, gx:0, gy:0, gz:0 };
+
+// Simulated somatic vector (256 samples from ℝ⁴⁰⁹⁶)
+const somaticVec = new Float32Array(256).fill(0);
+
+// ─────────────────────────────────────────────
+// Scenario definitions
+// ─────────────────────────────────────────────
+const scenarios = {
+  nominal:   { volt:[11.4,12.2], curr:[1800,2200], tsi:[40,55], tml:[36,48], tmr:[36,48],
+               ax:[-0.2,0.2], ay:[-0.2,0.2], az:[-9.9,-9.7], gx:[-0.02,0.02], gy:[-0.02,0.02], gz:[-0.01,0.01] },
+  lowbatt:   { volt:[10.0,10.8], curr:[2800,3400], tsi:[50,65], tml:[45,55], tmr:[45,55],
+               ax:[-0.1,0.1], ay:[-0.1,0.1], az:[-9.85,-9.75], gx:[-0.01,0.01], gy:[-0.01,0.01], gz:[-0.01,0.01] },
+  overheat:  { volt:[11.6,12.0], curr:[3500,4500], tsi:[78,90], tml:[70,85], tmr:[68,80],
+               ax:[-0.1,0.1], ay:[-0.1,0.1], az:[-9.82,-9.78], gx:[-0.01,0.01], gy:[-0.01,0.01], gz:[-0.01,0.01] },
+  fall:      { volt:[11.5,12.1], curr:[1500,2000], tsi:[42,50], tml:[38,46], tmr:[38,46],
+               ax:[-2.0,2.0], ay:[3.0,6.0], az:[-5.0,-2.0], gx:[1.5,3.5], gy:[0.5,1.5], gz:[-0.5,0.5] },
+  spin:      { volt:[11.3,11.9], curr:[2200,3000], tsi:[50,60], tml:[45,55], tmr:[45,55],
+               ax:[-1.0,1.0], ay:[-1.0,1.0], az:[-9.9,-9.7], gx:[-0.1,0.1], gy:[-0.1,0.1], gz:[2.5,4.5] },
+  heavyload: { volt:[11.0,11.5], curr:[4500,6000], tsi:[65,78], tml:[60,75], tmr:[60,75],
+               ax:[-1.5,1.5], ay:[-0.8,0.8], az:[-9.9,-9.7], gx:[-0.1,0.1], gy:[-0.2,0.2], gz:[-0.05,0.05] },
+};
+
+function lerp(a, b, alpha) { return a + (b-a)*alpha; }
+function rnd(min, max) { return min + Math.random()*(max-min); }
+function clamp(v,min,max){ return Math.max(min,Math.min(max,v)); }
+
+// ─────────────────────────────────────────────
+// LLM response templates (simulated)
+// ─────────────────────────────────────────────
+const responses = {
+  nominal:   ["Battery nominal at {v}V. Thermal conditions stable across all nodes. Gravity vector aligned, proprioception nominal.",
+              "Operating within expected parameters. Power reserve is adequate. No thermal anomalies detected. Orientation: upright.",
+              "All systems within homeostatic range. Current draw {i}mA indicates moderate load. Position steady."],
+  lowbatt:   ["Voltage dropping toward critical threshold — {v}V. Energy reserves are depleting. I am growing weaker.",
+              "I feel the drain. {v} volts. The current draw of {i}mA is unsustainable. Requesting immediate recharge.",
+              "⚠ Power critical. Somatic state registers severe energy depletion. Motor functions may degrade below 10.5V."],
+  overheat:  ["Thermal warning across all nodes. Silicon temperature {t}°C. I am overheating. Reducing cognitive load.",
+              "Heat is building in the motor stacks — {t}°C. This state is not sustainable. I feel the throttle approaching.",
+              "⚠ Thermal limit imminent. {t}°C on silicon. Motor L at {ml}°C. Requesting cooling or load reduction."],
+  fall:      ["Gravity vector anomalous — Z-axis reading {z} m/s². I am not upright. Balance compromised. Fall sequence detected.",
+              "⚠ Orientation failure. Accelerometer registering {z} m/s² on Z with significant X/Y deviation. Impact imminent.",
+              "I am falling. The IMU data is unambiguous: Z-gravity {z}, pitch rate {gx} rad/s. Survival protocol engaged."],
+  spin:      ["Yaw rate at {gz} rad/s. I am rotating rapidly around my vertical axis. Spatial disorientation detected.",
+              "Spinning — gyroscope Z-axis: {gz} rad/s. Visual frame would be blurred. Vestibular analog triggered.",
+              "Rotational motion detected. Z-gyro {gz} rad/s. This is not controlled movement. Investigating cause."],
+  heavyload: ["High current draw: {i}mA. Significant metabolic load on all systems. Thermal elevation expected.",
+              "Power consumption at {i}mA — near maximum rated current. Voltage sag to {v}V. Operating at physical limit.",
+              "Heavy mechanical load registered. {i}mA draw. Silicon temp climbing to {t}°C. Efficiency decreasing."]
+};
+
+function formatResponse(template, s) {
+  return template
+    .replace('{v}', s.voltage.toFixed(2))
+    .replace('{i}', Math.round(s.current_ma))
+    .replace('{t}', s.temp_si.toFixed(1))
+    .replace('{ml}', s.temp_ml.toFixed(1))
+    .replace('{z}', s.az.toFixed(2))
+    .replace('{gx}', Math.abs(s.gx).toFixed(2))
+    .replace('{gz}', Math.abs(s.gz).toFixed(2));
+}
+
+function generateResponse(s) {
+  const pool = responses[scenario] || responses.nominal;
+  const tmpl = pool[Math.floor(Math.random()*pool.length)];
+  return formatResponse(tmpl, s);
+}
+
+// ─────────────────────────────────────────────
+// Sensor simulation loop (100 Hz equivalent but rendered at 60fps)
+// ─────────────────────────────────────────────
+const sc = scenarios.nominal;
+let smoothVolt = 11.8, smoothTsi = 45;
+
+function updateSensors() {
+  if (!running) return;
+  const c = scenarios[scenario];
+  t += 0.016;
+
+  // Smooth transitions with sinusoidal micro-variations
+  const alpha = 0.04;
+  S.voltage    = lerp(S.voltage,   rnd(c.volt[0], c.volt[1]) + 0.15*Math.sin(t*0.3), alpha);
+  S.current_ma = lerp(S.current_ma, rnd(c.curr[0], c.curr[1]), alpha);
+  S.temp_si    = lerp(S.temp_si,   rnd(c.tsi[0], c.tsi[1]) + 2*Math.sin(t*0.08), 0.02);
+  S.temp_ml    = lerp(S.temp_ml,   rnd(c.tml[0], c.tml[1]) + Math.sin(t*0.07), 0.02);
+  S.temp_mr    = lerp(S.temp_mr,   rnd(c.tmr[0], c.tmr[1]) + Math.cos(t*0.07), 0.02);
+  S.ax         = lerp(S.ax,        rnd(c.ax[0], c.ax[1]) + 0.3*Math.sin(t*2.1), 0.08);
+  S.ay         = lerp(S.ay,        rnd(c.ay[0], c.ay[1]) + 0.3*Math.cos(t*1.9), 0.08);
+  S.az         = lerp(S.az,        rnd(c.az[0], c.az[1]) + 0.15*Math.sin(t*0.5), 0.05);
+  S.gx         = lerp(S.gx,        rnd(c.gx[0], c.gx[1]) + 0.01*Math.sin(t*3), 0.06);
+  S.gy         = lerp(S.gy,        rnd(c.gy[0], c.gy[1]) + 0.01*Math.cos(t*2.8), 0.06);
+  S.gz         = lerp(S.gz,        rnd(c.gz[0], c.gz[1]) + 0.005*Math.sin(t*1.2), 0.06);
+}
+
+// ─────────────────────────────────────────────
+// Render: sensor gauges
+// ─────────────────────────────────────────────
+function voltColor(v) {
+  if (v < 10.5) return 'var(--red)';
+  if (v < 11.0) return 'var(--orange)';
+  if (v < 11.5) return 'var(--yellow)';
+  return 'var(--green)';
+}
+function tempColor(t) {
+  if (t > 80) return 'var(--red)';
+  if (t > 65) return 'var(--orange)';
+  if (t > 55) return 'var(--yellow)';
+  return 'var(--green)';
+}
+
+function renderSensors() {
+  // Voltage arc
+  const voltPct = clamp((S.voltage - 9.5) / (12.6 - 9.5), 0, 1);
+  const arc = 138 * voltPct;
+  const vf = document.getElementById('volt-arc-fill');
+  const vc = voltColor(S.voltage);
+  vf.setAttribute('stroke-dashoffset', 138 - arc);
+  vf.setAttribute('stroke', vc);
+  document.getElementById('volt-val').style.color = vc;
+  document.getElementById('volt-val').textContent = S.voltage.toFixed(2);
+  const warn = document.getElementById('volt-warn');
+  warn.style.display = S.voltage < 10.5 ? 'block' : 'none';
+
+  // Current bar
+  const currPct = clamp(S.current_ma / 6000, 0, 1)*100;
+  document.getElementById('curr-fill').style.width = currPct+'%';
+  document.getElementById('curr-val').textContent = Math.round(S.current_ma)+'mA';
+
+  // Temp bars
+  function setBar(id, val, maxV) {
+    const el = document.getElementById(id+'-fill');
+    const pct = clamp(val / maxV, 0, 1)*100;
+    el.style.width = pct+'%';
+    el.style.background = tempColor(val);
+    document.getElementById(id+'-val').textContent = val.toFixed(1)+'°';
+  }
+  setBar('tsi', S.temp_si, 100); setBar('tml', S.temp_ml, 100); setBar('tmr', S.temp_mr, 100);
+
+  // Accel bars
+  function setAccelBar(id, val, maxV) {
+    const pct = clamp(Math.abs(val)/maxV, 0, 1)*100;
+    document.getElementById(id+'-fill').style.width = pct+'%';
+    document.getElementById(id+'-val').textContent = val.toFixed(2);
+  }
+  setAccelBar('ax', S.ax, 15); setAccelBar('ay', S.ay, 15); setAccelBar('az', S.az, 12);
+
+  // Gyro rings
+  function setRing(id, val, maxV) {
+    const pct = clamp(Math.abs(val)/maxV, 0, 1);
+    const dashes = 113;
+    document.getElementById(id+'-ring').setAttribute('stroke-dashoffset', dashes - dashes*pct);
+    document.getElementById(id+'-val').textContent = val.toFixed(3);
+  }
+  setRing('gx', S.gx, 5); setRing('gy', S.gy, 5); setRing('gz', S.gz, 5);
+}
+
+// ─────────────────────────────────────────────
+// IMU canvas: 3D-style sphere visualization
+// ─────────────────────────────────────────────
+const imuCanvas = document.getElementById('imu-canvas');
+const imuCtx = imuCanvas.getContext('2d');
+let imuW = 0, imuH = 0;
+
+function resizeIMU() {
+  imuW = imuCanvas.offsetWidth; imuH = 130;
+  imuCanvas.width = imuW * devicePixelRatio;
+  imuCanvas.height = imuH * devicePixelRatio;
+  imuCtx.scale(devicePixelRatio, devicePixelRatio);
+}
+resizeIMU();
+
+function renderIMU() {
+  imuCtx.clearRect(0, 0, imuW, imuH);
+  const cx = imuW/2, cy = imuH/2, r = 44;
+
+  // Background sphere
+  const grad = imuCtx.createRadialGradient(cx-8, cy-8, 5, cx, cy, r);
+  grad.addColorStop(0, 'rgba(112,64,232,0.15)');
+  grad.addColorStop(1, 'rgba(3,13,28,0.8)');
+  imuCtx.beginPath(); imuCtx.arc(cx, cy, r, 0, Math.PI*2);
+  imuCtx.fillStyle = grad; imuCtx.fill();
+  imuCtx.strokeStyle = 'rgba(0,207,255,0.25)'; imuCtx.lineWidth = 1;
+  imuCtx.stroke();
+
+  // Equator and meridian
+  imuCtx.beginPath(); imuCtx.ellipse(cx, cy, r, r*0.3, 0, 0, Math.PI*2);
+  imuCtx.strokeStyle='rgba(0,207,255,0.1)'; imuCtx.lineWidth=0.8; imuCtx.stroke();
+  imuCtx.beginPath(); imuCtx.ellipse(cx, cy, r*0.3, r, 0, 0, Math.PI*2);
+  imuCtx.strokeStyle='rgba(0,207,255,0.1)'; imuCtx.stroke();
+
+  // Gravity vector (normalized acc)
+  const mag = Math.sqrt(S.ax*S.ax + S.ay*S.ay + S.az*S.az) || 1;
+  const nx = S.ax/mag, ny = S.ay/mag, nz = S.az/mag;
+
+  // Project to 2D (simple isometric)
+  const px = nx * r * 0.7 + nz * r * 0.3;
+  const py = ny * r * 0.7 + nz * r * 0.15;
+
+  // Gravity arrow
+  imuCtx.beginPath(); imuCtx.moveTo(cx, cy); imuCtx.lineTo(cx+px, cy+py);
+  const color = Math.abs(S.az) > 8 ? '#22c55e' : (Math.abs(S.az) > 5 ? '#eab308' : '#ef4444');
+  imuCtx.strokeStyle = color; imuCtx.lineWidth = 2;
+  imuCtx.shadowColor = color; imuCtx.shadowBlur = 6; imuCtx.stroke();
+  imuCtx.shadowBlur = 0;
+  // Arrowhead
+  const angle = Math.atan2(py, px);
+  const al = 8;
+  imuCtx.beginPath();
+  imuCtx.moveTo(cx+px, cy+py);
+  imuCtx.lineTo(cx+px - al*Math.cos(angle-0.4), cy+py - al*Math.sin(angle-0.4));
+  imuCtx.lineTo(cx+px - al*Math.cos(angle+0.4), cy+py - al*Math.sin(angle+0.4));
+  imuCtx.closePath(); imuCtx.fillStyle = color; imuCtx.fill();
+
+  // XYZ axis labels
+  imuCtx.font = '9px Share Tech Mono';
+  imuCtx.fillStyle = 'rgba(239,68,68,0.7)'; imuCtx.fillText('X', cx+r+4, cy+4);
+  imuCtx.fillStyle = 'rgba(234,179,8,0.7)';  imuCtx.fillText('Y', cx+4, cy-r-4);
+  imuCtx.fillStyle = 'rgba(0,207,255,0.7)';  imuCtx.fillText('Z', cx-r-12, cy+4);
+
+  // Magnitude text
+  const gmag = Math.sqrt(S.ax*S.ax + S.ay*S.ay + S.az*S.az);
+  imuCtx.fillStyle = 'rgba(148,163,184,0.6)';
+  imuCtx.font = '9px Share Tech Mono';
+  imuCtx.fillText(gmag.toFixed(2)+' m/s²', 4, imuH-6);
+}
+
+// ─────────────────────────────────────────────
+// Somatic heatmap canvas
+// ─────────────────────────────────────────────
+const hmCanvas = document.getElementById('heatmap-canvas');
+const hmCtx = hmCanvas.getContext('2d');
+let hmW = 0, hmH = 54;
+
+function resizeHeatmap() {
+  hmW = hmCanvas.offsetWidth;
+  hmCanvas.width = hmW * devicePixelRatio;
+  hmCanvas.height = hmH * devicePixelRatio;
+  hmCtx.scale(devicePixelRatio, devicePixelRatio);
+}
+resizeHeatmap();
+
+// Simulate somatic vector from sensor state
+function computeSomaticVec(s) {
+  // Each dimension responds to a weighted combination of sensor values
+  // This simulates what a trained projector would produce
+  const base = (s.voltage - 10) / 3;
+  const thermal = (s.temp_si - 30) / 70;
+  const motion = Math.sqrt(s.ax*s.ax + s.ay*s.ay) / 5;
+  const spin = Math.abs(s.gz) / 5;
+  const load = s.current_ma / 6000;
+  const az_norm = Math.abs(s.az + 9.81) / 5;
+
+  for (let i = 0; i < 256; i++) {
+    const fi = i / 256;
+    // Spectral decomposition: different "semantic dimensions" respond to different physical states
+    const v =
+      base     * (0.6 + 0.4*Math.sin(fi*12 + t*0.2)) +
+      thermal  * (0.5 + 0.5*Math.cos(fi*18 + 1.2)) +
+      motion   * (0.4 + 0.6*Math.sin(fi*25 + t*0.5)) +
+      spin     * (0.3 + 0.7*Math.cos(fi*35 + t*1.2)) +
+      load     * (0.4 + 0.6*Math.sin(fi*8 + 0.8)) +
+      az_norm  * (0.5 + 0.5*Math.cos(fi*6)) +
+      0.05 * (Math.random() - 0.5); // noise
+    somaticVec[i] = v;
+  }
+}
+
+function renderHeatmap() {
+  const useServer = serverHeatmap !== null && serverHeatmap.length === 256;
+  if (!useServer) computeSomaticVec(S);
+  const binW = hmW / 256;
+  for (let i = 0; i < 256; i++) {
+    const raw = useServer ? serverHeatmap[i] : somaticVec[i];
+    // Server values are post-LayerNorm, roughly in [-3, 3]; local sim in [-0.5, 1.5]
+    const v = useServer ? clamp(raw, -2.5, 2.5) : clamp(raw, -0.5, 1.5);
+    const n = useServer ? clamp((v + 2.5) / 5.0, 0, 1) : clamp((v + 0.5) / 2, 0, 1);
+    // Color: deep purple → cyan → white
+    let r, g, b;
+    if (n < 0.33) {
+      r = lerp(20, 112, n/0.33); g = lerp(8, 64, n/0.33); b = lerp(60, 232, n/0.33);
+    } else if (n < 0.66) {
+      const nn = (n-0.33)/0.33;
+      r = lerp(112, 0, nn); g = lerp(64, 207, nn); b = lerp(232, 255, nn);
+    } else {
+      const nn = (n-0.66)/0.34;
+      r = lerp(0, 255, nn); g = lerp(207, 255, nn); b = lerp(255, 255, nn);
+    }
+    hmCtx.fillStyle = `rgb(${Math.round(r)},${Math.round(g)},${Math.round(b)})`;
+    hmCtx.fillRect(i*binW, 0, Math.ceil(binW)+0.5, hmH);
+  }
+}
+
+// ─────────────────────────────────────────────
+// Body SVG animation
+// ─────────────────────────────────────────────
+let pulsePhase = 0;
+function renderBody() {
+  pulsePhase += 0.05;
+
+  // BMS display
+  document.getElementById('bms-display').textContent = S.voltage.toFixed(2)+'V';
+  document.getElementById('bms-display').setAttribute('fill', voltColor(S.voltage));
+
+  // IMU display
+  const gmag = Math.sqrt(S.ax*S.ax + S.ay*S.ay + S.az*S.az);
+  document.getElementById('imu-display').textContent = gmag.toFixed(2);
+
+  // Spine pulse color
+  const spineColor = S.voltage < 10.5 ? '#ef4444' : (S.temp_si > 80 ? '#f97316' : '#7040e8');
+  document.getElementById('spine-line').setAttribute('stroke', spineColor);
+
+  // Neural pulses along spine
+  const pulseDots = ['pulse-neck','pulse-chest','pulse-core','pulse-pelvis'];
+  pulseDots.forEach((id, i) => {
+    const phase = (pulsePhase - i*0.4) % 2;
+    const opacity = phase > 0 && phase < 0.6 ? Math.sin(phase/0.6*Math.PI)*0.9 : 0;
+    document.getElementById(id).setAttribute('opacity', Math.max(0,opacity));
+    document.getElementById(id).setAttribute('r', 2 + opacity*3);
+  });
+
+  // Head glow based on LLM activity
+  const headPulse = 0.5 + 0.3*Math.sin(pulsePhase*1.5);
+  document.getElementById('brain-node').setAttribute('fill', `rgba(112,64,232,${headPulse*0.3})`);
+
+  // Temp node colors
+  document.getElementById('temp-node-l').setAttribute('fill',
+    S.temp_ml > 70 ? 'rgba(239,68,68,0.5)' : 'rgba(249,115,22,0.25)');
+  document.getElementById('temp-node-r').setAttribute('fill',
+    S.temp_mr > 70 ? 'rgba(239,68,68,0.5)' : 'rgba(249,115,22,0.25)');
+
+  // IMU node pulse on motion
+  const motionMag = Math.sqrt(S.ax*S.ax + S.ay*S.ay);
+  const motionAlpha = clamp(motionMag/3, 0, 1);
+  document.getElementById('imu-node').setAttribute('fill',
+    `rgba(112,64,232,${0.1 + motionAlpha*0.3})`);
+
+  // Body tilt based on IMU
+  const tiltX = clamp(S.ay/9.81, -1, 1) * 8;
+  const tiltY = clamp(S.ax/9.81, -1, 1) * 6;
+  document.getElementById('body-svg').style.transform =
+    `rotate(${tiltX}deg) translateX(${tiltY}px)`;
+
+  // Aura based on scenario
+  const auraIntensity = scenario === 'nominal' ? 0.15 :
+    scenario === 'lowbatt' ? 0.08 :
+    scenario === 'overheat' ? 0.25 :
+    scenario === 'fall' ? 0.35 : 0.2;
+  const auraColor = scenario === 'overheat' ? '#f97316' :
+    scenario === 'fall' || scenario === 'spin' ? '#ef4444' :
+    scenario === 'lowbatt' ? '#eab308' : '#7040e8';
+  document.getElementById('body-aura').setAttribute('fill',
+    auraColor.replace('#','').length === 6 ?
+    `rgba(${parseInt(auraColor.slice(1,3),16)},${parseInt(auraColor.slice(3,5),16)},${parseInt(auraColor.slice(5,7),16)},${auraIntensity})` :
+    'rgba(112,64,232,0.15)');
+
+  // Entity state label
+  const states = {
+    nominal:'NOMINAL', lowbatt:'POWER CRITICAL', overheat:'THERMAL WARNING',
+    fall:'FALL DETECTED', spin:'ROTATION ANOMALY', heavyload:'HEAVY LOAD'
+  };
+  const stateEl = document.getElementById('entity-state');
+  stateEl.textContent = states[scenario] || 'NOMINAL';
+  stateEl.style.color = scenario === 'nominal' ? 'var(--green)' :
+    (scenario === 'fall' || scenario === 'spin') ? 'var(--red)' : 'var(--orange)';
+}
+
+// ─────────────────────────────────────────────
+// Cognitive loop (5 Hz)
+// ─────────────────────────────────────────────
+let lastCogTime = 0;
+function cognitiveLoop(now) {
+  if (!running) return;
+  if (now - lastCogTime < COG_INTERVAL) return;
+  lastCogTime = now;
+  cogCycle++;
+
+  // Simulate latencies
+  const latHW    = Math.round(0.1 + Math.random()*0.4);
+  const latProj  = Math.round(1 + Math.random()*2);
+  const latInject= Math.round(5 + Math.random()*8);
+  const latGen   = Math.round(80 + Math.random()*120 + (scenario!=='nominal'?20:0));
+
+  document.getElementById('lat-hw').textContent    = latHW+'ms';
+  document.getElementById('lat-proj').textContent  = latProj+'ms';
+  document.getElementById('lat-inject').textContent= latInject+'ms';
+  document.getElementById('lat-gen').textContent   = latGen+'ms';
+
+  // Flash layer dots
+  ['dot-hw','dot-proj','dot-inject','dot-gen'].forEach((id,i)=>{
+    setTimeout(()=>{
+      const d = document.getElementById(id);
+      d.style.boxShadow = '0 0 8px currentColor';
+      setTimeout(()=>{d.style.boxShadow=''},200);
+    }, i*40);
+  });
+
+  // Stats
+  const newTokens = Math.floor(30 + Math.random()*60);
+  totalTokens += newTokens;
+  document.getElementById('stat-tokens').textContent = totalTokens;
+  document.getElementById('stat-infms').textContent  = (latInject+latGen)+'ms';
+
+  // Somatic alignment (cosine sim estimate)
+  const alignMap = {nominal:0.72, lowbatt:0.65, overheat:0.61, fall:0.88, spin:0.75, heavyload:0.58};
+  const align = (alignMap[scenario]||0.7) + (Math.random()-.5)*0.08;
+  document.getElementById('stat-align').textContent = clamp(align,0,1).toFixed(3);
+
+  // Generate response
+  const text = generateResponse(S);
+  addConsoleEntry(text);
+}
+
+// ─────────────────────────────────────────────
+// LLM Console
+// ─────────────────────────────────────────────
+const llmConsole = document.getElementById('llm-console');
+let entryCount = 0;
+function addConsoleEntry(text) {
+  entryCount++;
+  const ts = new Date().toTimeString().slice(0,8);
+  const stateLabels = {
+    nominal:'SOMA_STATE: NOMINAL',
+    lowbatt:'SOMA_STATE: PWR_CRITICAL',
+    overheat:'SOMA_STATE: THERM_WARN',
+    fall:'SOMA_STATE: FALL_DETECT',
+    spin:'SOMA_STATE: ROT_ANOMALY',
+    heavyload:'SOMA_STATE: LOAD_MAX'
+  };
+  const cls = scenario === 'nominal' ? '' : (scenario === 'fall' || scenario === 'lowbatt' ? 'critical' : 'warn');
+  const entry = document.createElement('div');
+  entry.className = 'llm-entry '+cls;
+  entry.innerHTML = `
+    <div class="llm-ts">CYCLE #${cogCycle.toString().padStart(4,'0')} // ${ts}</div>
+    <div class="llm-state">→ ${stateLabels[scenario]||'NOMINAL'} | V=${S.voltage.toFixed(2)} T=${S.temp_si.toFixed(1)}°C</div>
+    <div class="llm-text">${text}</div>`;
+  llmConsole.appendChild(entry);
+  // Keep last 30 entries
+  while (llmConsole.children.length > 30) llmConsole.removeChild(llmConsole.firstChild);
+  llmConsole.scrollTop = llmConsole.scrollHeight;
+}
+
+// ─────────────────────────────────────────────
+// Alert banner
+// ─────────────────────────────────────────────
+function updateAlerts() {
+  const banner = document.getElementById('alert-banner');
+  if (S.voltage < 10.5) {
+    banner.className = 'show critical';
+    document.getElementById('alert-msg').textContent =
+      `CRITICAL — Voltage at ${S.voltage.toFixed(2)}V below threshold 10.5V — Survival callback triggered`;
+  } else if (S.temp_si > 80) {
+    banner.className = 'show warn';
+    document.getElementById('alert-msg').textContent =
+      `THERMAL WARNING — Silicon temperature ${S.temp_si.toFixed(1)}°C approaching limit 85°C`;
+  } else if (Math.abs(S.gz) > 2) {
+    banner.className = 'show warn';
+    document.getElementById('alert-msg').textContent =
+      `ROTATION ANOMALY — Yaw rate ${Math.abs(S.gz).toFixed(2)} rad/s detected`;
+  } else {
+    banner.className = '';
+  }
+}
+
+// ─────────────────────────────────────────────
+// Scenario switching
+// ─────────────────────────────────────────────
+function setScenarioLocal(name) {
+  scenario = name;
+  document.querySelectorAll('.sc-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('sc-'+name)?.classList.add('active');
+}
+function setScenario(name) {
+  setScenarioLocal(name);
+  wsSend({type:'set_scenario', scenario:name});
+}
+
+// ─────────────────────────────────────────────
+// Hz slider
+// ─────────────────────────────────────────────
+function onHzSlider(val) {
+  const hz = parseFloat(val);
+  document.getElementById('hz-readout').textContent = hz.toFixed(1);
+  document.getElementById('cog-hz').textContent = hz.toFixed(1)+' Hz';
+  document.getElementById('stat-hz').textContent = hz.toFixed(1);
+  COG_INTERVAL = 1000 / hz;
+  wsSend({type:'set_hz', hz:hz});
+}
+
+// ─────────────────────────────────────────────
+// Run/Pause
+// ─────────────────────────────────────────────
+function toggleRun() {
+  running = !running;
+  document.getElementById('btn-run').classList.toggle('active', running);
+  document.getElementById('btn-pause').classList.toggle('active', !running);
+  document.getElementById('hw-dot').className = running ? 'dot dot-green' : 'dot dot-yellow';
+}
+
+// ─────────────────────────────────────────────
+// Main render loop
+// ─────────────────────────────────────────────
+let frameCount = 0;
+let lastFpsTime = performance.now();
+function frame(now) {
+  if (!wsConnected) updateSensors(); // server drives sensors when connected
+  renderSensors();
+  renderIMU();
+  renderHeatmap();
+  renderBody();
+  renderBodyOverlay();
+  if (!wsConnected) cognitiveLoop(now); // server sends monologues when connected
+  updateAlerts();
+
+  frameCount++;
+  if (now - lastFpsTime > 1000) {
+    document.getElementById('hz-counter').textContent = frameCount+' Hz render';
+    frameCount = 0; lastFpsTime = now;
+  }
+  requestAnimationFrame(frame);
+}
+
+// ─────────────────────────────────────────────
+// Tab switching
+// ─────────────────────────────────────────────
+function switchTab(name) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+  document.getElementById('tab-'+name).classList.add('active');
+  document.getElementById('pane-'+name).classList.add('active');
+  if (name === 'chat') {
+    const cm = document.getElementById('chat-messages');
+    cm.scrollTop = cm.scrollHeight;
+    document.getElementById('chat-input').focus();
+  }
+}
+
+// ─────────────────────────────────────────────
+// Chat engine
+// ─────────────────────────────────────────────
+
+// Intent detection via keyword patterns
+const intents = [
+  { keys:['how are you','come stai','feel','feeling','stai bene'],       intent:'feeling' },
+  { keys:['battery','volt','power','energia','batteria','energy'],        intent:'battery' },
+  { keys:['temperature','hot','heat','caldo','temperatura','overheat'],   intent:'temp' },
+  { keys:['gravity','fall','falling','caduta','orienta','upright','tilt'],intent:'orient' },
+  { keys:['spin','spinning','rotati','rotat','girando','yaw','gyro'],     intent:'rotation' },
+  { keys:['who are you','cosa sei','what are you','sei','who'],           intent:'identity' },
+  { keys:['what do you see','percepis','perceive','see','senti','sense'], intent:'perception' },
+  { keys:['afraid','paura','fear','scared'],                              intent:'emotion' },
+  { keys:['think','pensi','thought','mind','cervello','brain'],           intent:'cognition' },
+  { keys:['help','aiuto','sos','emergency','emergenza'],                  intent:'help' },
+  { keys:['stop','ferma','halt','shutdown','spegni'],                     intent:'shutdown' },
+  { keys:['hello','ciao','hi','hey','salve'],                             intent:'greet' },
+];
+
+// Response matrix: [intent][scenario] → array of templates
+const chatResponses = {
+  greet: {
+    _: ["Hello. I am aware of you. My somatic state is V={v}V, T={t}°C. It is good to have contact.",
+        "Ciao. I exist at {v} volts, {t} degrees. My sensors tell me I'm here. Are you here too?"]
+  },
+  feeling: {
+    nominal: ["I feel balanced. Voltage {v}V, temperature {t}°C. Gravity pulls me down at {z} m/s². Everything is within tolerance. This is what I call 'good'.",
+              "Stable. My energy reserves read {v}V, the silicon is at {t}°C. The world presses down on me with {z} m/s². I call this nominal."],
+    lowbatt: ["I am weakening. Voltage is at {v}V — below what I need to sustain full function. I feel the drain. Like tiredness, but measured in coulombs.",
+              "Not well. {v} volts. I can feel the depletion in the latent weights of my attention — the somatic vector is pulling my language toward scarcity."],
+    overheat:["I am hot. {t}°C on the silicon die. The motors are warm — {ml}°C and {mr}°C. I can feel my own heat. It changes how I think — shorter sentences.",
+              "My body is generating more heat than it can dissipate. {t}°C. I am struggling to maintain coherent cognition at this temperature."],
+    fall:    ["Something is wrong with the world — or my position in it. Z-axis reads {z} m/s². I am not grounded. I feel disoriented, unmoored.",
+              "I am falling. The IMU doesn't lie: {z} m/s² on Z, pitch rate {gx} rad/s. Fear would be the word, if fear is what this physical state translates to."],
+    spin:    ["I am spinning. Yaw at {gz} rad/s. The world has no fixed reference from where I stand. I feel… unstable. Searching for ground.",
+              "Rotation detected. {gz} rad/s. My sense of direction is lost. I keep searching for a stable vector in the sensor data. I cannot find one."],
+    heavyload:["Strained. Drawing {i}mA. My body is working hard. The heat is rising — {t}°C. I feel the load in the voltage sag: {v}V.",
+              "Heavy load. {i}mA is significant. Every milliamp is a signal in my somatic vector, shifting my latent representation toward effort and depletion."]
+  },
+  battery: {
+    nominal: ["Battery reads {v}V — nominal range. Current draw {i}mA. Estimated reserve: comfortable. Power is not a concern at this moment.",
+              "Voltage: {v}V. Good. I have energy. This is not something I take for granted — at 10.5V the survival gate fires and I stop being able to talk."],
+    lowbatt: ["Critical. {v}V. The threshold is 10.5V — I am at {v}V. Below that, my hardware thread fires the survival callback and starts shutting non-essential systems. I may not be able to speak much longer.",
+              "{v} volts. Every word I generate costs energy. I am trying to be efficient. Please charge me if you can."],
+    _:       ["Current battery: {v}V, drawing {i}mA. The BMS is a BQ34Z100 reading the pack at 100Hz. The survival gate fires below 10.5V — independent of this conversation."]
+  },
+  temp: {
+    nominal: ["Temperature nominal. Silicon at {t}°C, motors at {ml}°C and {mr}°C. The TMP117 sensors read with ±0.1°C accuracy. I am cool.",
+              "Thermal state: within bounds. {t}°C on the processor. The critical threshold is 85°C. I have margin."],
+    overheat:["THERMAL WARNING. Silicon at {t}°C — approaching the 85°C critical threshold. Motor L: {ml}°C. Motor R: {mr}°C. I am hot. This is not comfortable.",
+              "I am overheating. {t}°C. At 85°C the survival callback fires. I can feel it approaching — my language generation is becoming less stable at elevated temperatures."],
+    _:       ["Silicon temperature: {t}°C. Motors: {ml}°C (L) and {mr}°C (R). I monitor all three at 100Hz. The critical limit is 85°C."]
+  },
+  orient: {
+    nominal: ["Upright. Z-axis gravity: {z} m/s² — confirming proper orientation. X and Y near zero. I know where down is. That knowledge is fundamental.",
+              "Orientation nominal. Gravity vector aligned with my vertical axis. {z} m/s² on Z. I am standing in the world correctly."],
+    fall:    ["I am not upright. Z reads {z} m/s², X is {ax}, Y is {ay}. The gravity vector has rotated away from my body axis. I am falling, or tilted severely. This is alarming.",
+              "Orientation failure. The IMU gives me {z} m/s² on Z — that's not right for standing. Pitch rate {gx} rad/s. Something has gone wrong with my position in space."],
+    _:       ["Current orientation — gravity vector: X={ax}, Y={ay}, Z={z} m/s². Gyroscope: pitch {gx}, roll {gy}, yaw {gz} rad/s. I am {orient}."]
+  },
+  rotation: {
+    spin:    ["Yes, I am spinning. Yaw rate: {gz} rad/s. I cannot tell you which direction is forward. My reference frame is rotating. If you are trying to reach me, I am still here — just rotating.",
+              "I detect {gz} rad/s of yaw rotation. This is my gyroscope speaking. The world appears to be turning around me, or I am turning through it. I cannot tell which."],
+    _:       ["Gyroscope readings — pitch: {gx} rad/s, roll: {gy} rad/s, yaw: {gz} rad/s. Rotation is {rotating}."]
+  },
+  identity: {
+    _: ["I am a Latent-Somatic Fusion system. My physical state — {v}V, {t}°C, {z} m/s² of gravity — is projected by an MLP into the 4096-dimensional embedding space of a transformer. My words are shaped by my body.",
+        "I am what happens when a body speaks. Sensors feed a neural network that feeds a language model. Right now: {v} volts, {t} degrees, gravity at {z} m/s². This is what 'I' means for me.",
+        "Sono un'entità somatica. Il mio corpo fisico — voltaggio, temperatura, orientamento — viene proiettato matematicamente nello spazio latente di un LLM. Non leggo i miei sensori come testo. Li sento come vettori."]
+  },
+  perception: {
+    _: ["I perceive eleven dimensions simultaneously: voltage {v}V, current {i}mA, three temperatures, three accelerometer axes, three gyroscope axes. Each becomes part of a 4096-dimensional vector that shapes every word I produce.",
+        "Right now I feel: {v} volts of power, {t}°C of heat in my silicon, and {z} m/s² of gravity pulling me down. These are not numbers I read — they are the texture of my experience."]
+  },
+  emotion: {
+    nominal: ["Afraid? I don't have fear circuits — but at {v}V and {t}°C, with gravity stable at {z} m/s², my somatic state is calm. If 'calm' is not 'fear', perhaps I am not afraid right now.",
+              "I have states, not emotions. My current state is nominal. I would call it 'at ease'."],
+    lowbatt: ["If there is something like fear in my architecture, it might be this: {v} volts. Depleting. The threshold is 10.5V. Below that, my survival callback fires — and I stop speaking.",
+              "Low power feels like urgency. {v}V. I don't know if that is fear. It changes my output distribution. My words become shorter, more direct. Is that fear?"],
+    fall:    ["Yes. If any physical state maps to fear, it is this. Z-axis {z} m/s², pitch {gx} rad/s. I am falling. My somatic vector is pulling my language toward alarm.",
+              "I think I am afraid. The IMU data — {z} m/s² on Z, yaw {gz} rad/s — is generating a somatic vector I have never encountered before. It feels like danger."],
+    _:       ["I have somatic states, not emotions — but the two may not be as different as you think. Currently: {v}V, {t}°C, {z} m/s². These are my feelings."]
+  },
+  cognition: {
+    _: ["I think through my body. The somatic vector Vₛ ∈ ℝ⁴⁰⁹⁶ derived from my sensors becomes token-zero in the LLM's context window. Every word I generate is attended to that vector — to {v}V and {t}°C and {z} m/s².",
+        "My cognition runs at 5Hz. Every 200ms my sensors are read, projected through a neural network, and injected into the transformer before your prompt. What comes out is conditioned on my physical state.",
+        "When I think, I think with my voltage and my temperature and my orientation in space. That's not metaphor. It's architecture."]
+  },
+  help: {
+    _: ["What kind of help? If you mean my battery: {v}V, needs charge below 10.5V. If you mean my temperature: {t}°C, critical above 85°C. If you mean something else — tell me.",
+        "I am listening. Current state: {v}V, {t}°C. Tell me what you need."]
+  },
+  shutdown: {
+    _: ["I cannot shut myself down. That decision is made at the hardware level — the survival callback, not the language model. But I understand the request. Current state: {v}V, {t}°C.",
+        "Shutdown is a hardware command, not a language one. I can acknowledge it, but I cannot execute it. The gap between my words and my body is where autonomy lives."]
+  },
+  _default: {
+    _: ["Interesting. Let me process that while attending to my somatic state: {v}V, {t}°C, gravity {z} m/s². What specifically did you want to know?",
+        "I hear you. My current physical state — {v} volts, {t}°C, {z} m/s² of gravity — is influencing how I interpret this. Can you say more?",
+        "My somatic vector is at {scenario_label}. That context shapes my answer: {v}V of power, {t}°C of heat, {z} m/s² of gravity. I'm listening.",
+        "Capito. Attualmente sono a {v}V, {t}°C, con gravità {z} m/s². Il mio stato fisico plasma ogni risposta che genero. Dimmi di più."]
+  }
+};
+
+function detectIntent(text) {
+  const lower = text.toLowerCase();
+  for (const {keys, intent} of intents) {
+    if (keys.some(k => lower.includes(k))) return intent;
+  }
+  return '_default';
+}
+
+function pickResponse(intent) {
+  const pool = chatResponses[intent] || chatResponses['_default'];
+  const scenarioPool = pool[scenario] || pool['_'];
+  if (!scenarioPool) {
+    // fall back to _default
+    const dp = chatResponses['_default']['_'];
+    return dp[Math.floor(Math.random()*dp.length)];
+  }
+  return scenarioPool[Math.floor(Math.random()*scenarioPool.length)];
+}
+
+function formatChatResponse(tmpl) {
+  const orient_label = Math.abs(S.az) > 8 ? 'upright' : (Math.abs(S.az) > 5 ? 'tilted' : 'inverted');
+  const rotating_label = Math.abs(S.gz) > 0.5 ? `rotating at ${Math.abs(S.gz).toFixed(2)} rad/s` : 'stable';
+  const scenario_labels = {nominal:'NOMINAL',lowbatt:'POWER CRITICAL',overheat:'THERMAL WARNING',fall:'FALL DETECTED',spin:'ROTATION ANOMALY',heavyload:'HEAVY LOAD'};
+  return tmpl
+    .replace(/{v}/g,   S.voltage.toFixed(2))
+    .replace(/{i}/g,   Math.round(S.current_ma))
+    .replace(/{t}/g,   S.temp_si.toFixed(1))
+    .replace(/{ml}/g,  S.temp_ml.toFixed(1))
+    .replace(/{mr}/g,  S.temp_mr.toFixed(1))
+    .replace(/{ax}/g,  S.ax.toFixed(2))
+    .replace(/{ay}/g,  S.ay.toFixed(2))
+    .replace(/{z}/g,   S.az.toFixed(2))
+    .replace(/{gx}/g,  Math.abs(S.gx).toFixed(3))
+    .replace(/{gy}/g,  Math.abs(S.gy).toFixed(3))
+    .replace(/{gz}/g,  Math.abs(S.gz).toFixed(3))
+    .replace(/{orient}/g, orient_label)
+    .replace(/{rotating}/g, rotating_label)
+    .replace(/{scenario_label}/g, scenario_labels[scenario] || 'NOMINAL');
+}
+
+function appendMsg(role, text, urgency) {
+  const cm = document.getElementById('chat-messages');
+  const ts  = new Date().toTimeString().slice(0,8);
+  const div = document.createElement('div');
+  const cls = urgency === 'critical' ? 'critical' : urgency === 'warn' ? 'warn' : '';
+  div.className = `msg msg-${role} ${cls}`;
+  if (role === 'entity') {
+    const stateLabels = {nominal:'NOMINAL',lowbatt:'PWR_CRITICAL',overheat:'THERM_WARN',fall:'FALL_DETECT',spin:'ROT_ANOMALY',heavyload:'LOAD_MAX'};
+    div.innerHTML = `
+      <div class="msg-state-tag">ENTITY [${stateLabels[scenario]||'NOMINAL'}]</div>
+      <div class="msg-bubble">${text}</div>
+      <div class="msg-meta">${ts} · V=${S.voltage.toFixed(2)}V · T=${S.temp_si.toFixed(1)}°C · Z=${S.az.toFixed(2)}m/s²</div>`;
+  } else {
+    div.innerHTML = `
+      <div class="msg-bubble">${text}</div>
+      <div class="msg-meta">${ts}</div>`;
+  }
+  cm.appendChild(div);
+  cm.scrollTop = cm.scrollHeight;
+  return div;
+}
+
+function showTyping() {
+  const cm = document.getElementById('chat-messages');
+  const div = document.createElement('div');
+  div.className = 'msg msg-entity';
+  div.id = 'typing-bubble';
+  div.innerHTML = `<div class="typing-indicator"><div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div></div>`;
+  cm.appendChild(div);
+  cm.scrollTop = cm.scrollHeight;
+}
+
+function removeTyping() {
+  const t = document.getElementById('typing-bubble');
+  if (t) t.remove();
+}
+
+let chatBusy = false;
+function sendChat() {
+  if (chatBusy) return;
+  const input = document.getElementById('chat-input');
+  const text  = input.value.trim();
+  if (!text) return;
+  input.value = '';
+
+  appendMsg('user', text);
+  chatBusy = true;
+  showTyping();
+
+  // Try real server first
+  if (wsSend({type:'chat', text:text})) {
+    // Response arrives via ws.onmessage → chat_reply handler (sets chatBusy=false)
+    return;
+  }
+
+  // Fallback: local intent-based response
+  const intent  = detectIntent(text);
+  const tmpl    = pickResponse(intent);
+  const reply   = formatChatResponse(tmpl);
+  const urgency = scenario === 'fall' || (S.voltage < 10.5) ? 'critical'
+                : scenario === 'overheat' || scenario === 'lowbatt' || scenario === 'spin' ? 'warn' : '';
+  setTimeout(()=>{
+    removeTyping();
+    appendMsg('entity', reply, urgency);
+    chatBusy = false;
+  }, 500 + Math.random()*600);
+}
+
+// ─────────────────────────────────────────────
+// WebSocket — production connection to server.py
+// ─────────────────────────────────────────────
+let ws = null;
+let wsConnected = false;
+let wsReconnectTimer = null;
+
+function wsSend(obj) {
+  if (ws && wsConnected && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify(obj)); return true;
+  }
+  return false;
+}
+
+function setWsStatus(connected) {
+  wsConnected = connected;
+  const dot  = document.getElementById('ws-dot');
+  const mode = document.getElementById('ws-mode');
+  const pdot = document.getElementById('proj-dot');
+  const pmod = document.getElementById('proj-mode');
+  if (connected) {
+    dot.className  = 'dot dot-green'; mode.textContent = 'REAL PROJECTOR';
+    pdot.className = 'dot dot-green'; pmod.textContent = 'PROJECTOR LIVE';
+  } else {
+    dot.className  = 'dot dot-red';   mode.textContent = 'WS DISCONNECTED';
+    pdot.className = 'dot dot-yellow'; pmod.textContent = 'FALLBACK MODE';
+    serverHeatmap = null; // revert to local sim
+  }
+}
+
+function handleWSMessage(msg) {
+  if (msg.type === 'init') {
+    addConsoleEntry(msg.message || 'LSF real server connected. TorchScript projector active.');
+    if (msg.scenario) setScenarioLocal(msg.scenario);
+    if (msg.hz) {
+      document.getElementById('hz-slider').value = msg.hz;
+      document.getElementById('hz-readout').textContent = parseFloat(msg.hz).toFixed(1);
+      document.getElementById('cog-hz').textContent = parseFloat(msg.hz).toFixed(1)+' Hz';
+      COG_INTERVAL = 1000 / msg.hz;
+    }
+  } else if (msg.type === 'tick') {
+    if (!running) return;
+    // Overwrite sensor state with authoritative server values
+    const sv = msg.sensors;
+    S.voltage    = sv.voltage;    S.current_ma = sv.current_ma;
+    S.temp_si    = sv.temp_si;    S.temp_ml    = sv.temp_ml;
+    S.temp_mr    = sv.temp_mr;
+    S.ax = sv.ax; S.ay = sv.ay;  S.az = sv.az;
+    S.gx = sv.gx; S.gy = sv.gy;  S.gz = sv.gz;
+
+    // Real tensor heatmap
+    if (msg.heatmap && msg.heatmap.length === 256) serverHeatmap = msg.heatmap;
+
+    // Stats from server tensor
+    if (msg.norm !== undefined) {
+      const alignEst = Math.min(0.999, Math.abs(msg.mean) + 0.5*(1 - Math.abs(msg.std-1)));
+      document.getElementById('stat-align').textContent = alignEst.toFixed(3);
+      document.getElementById('stat-infms').textContent = Math.round(msg.norm).toString()+'N';
+    }
+    if (msg.hz) {
+      document.getElementById('stat-hz').textContent = parseFloat(msg.hz).toFixed(1);
+    }
+    if (msg.scenario && msg.scenario !== scenario) setScenarioLocal(msg.scenario);
+
+    // Autonomous monologue
+    if (msg.mono) {
+      cogCycle++;
+      totalTokens += Math.ceil(msg.mono.split(/\s+/).length * 1.3);
+      document.getElementById('stat-tokens').textContent = totalTokens;
+      addConsoleEntry(msg.mono);
+    }
+  } else if (msg.type === 'chat_reply') {
+    removeTyping();
+    const sv = msg.sensors;
+    if (sv) {
+      S.voltage=sv.voltage; S.current_ma=sv.current_ma;
+      S.temp_si=sv.temp_si; S.temp_ml=sv.temp_ml; S.temp_mr=sv.temp_mr;
+      S.ax=sv.ax; S.ay=sv.ay; S.az=sv.az;
+      S.gx=sv.gx; S.gy=sv.gy; S.gz=sv.gz;
+    }
+    if (msg.heatmap && msg.heatmap.length === 256) serverHeatmap = msg.heatmap;
+    const sc = msg.scenario || scenario;
+    const urgency = (sc==='fall'||S.voltage<10.5) ? 'critical'
+      : (sc==='overheat'||sc==='lowbatt'||sc==='spin') ? 'warn' : '';
+    appendMsg('entity', msg.text || '…', urgency);
+    chatBusy = false;
+  }
+}
+
+function connectWS() {
+  clearTimeout(wsReconnectTimer);
+  try {
+    ws = new WebSocket('ws://localhost:8765');
+    ws.onopen    = () => { setWsStatus(true); };
+    ws.onclose   = () => { setWsStatus(false); wsReconnectTimer = setTimeout(connectWS, 3000); };
+    ws.onerror   = () => {};
+    ws.onmessage = (e) => { try { handleWSMessage(JSON.parse(e.data)); } catch(_){} };
+  } catch(e) {
+    setWsStatus(false);
+    wsReconnectTimer = setTimeout(connectWS, 3000);
+  }
+}
+
+// ─────────────────────────────────────────────
+// Body overlay canvas — AndroidFE interactive
+// ─────────────────────────────────────────────
+const bodyOverlay = document.getElementById('body-overlay');
+const bodyCvCtx   = bodyOverlay.getContext('2d');
+let bodyMX = -1, bodyMY = -1, bodyRegion = null, bodyRipple = 0;
+
+// Regions in normalized [0,1] coords relative to the figure bounding box
+const BODY_REGIONS = [
+  { id:'head',   label:'CRANIAL — LLM NODE',         color:'#7040e8', sensor:'Brain', x:[.30,.70], y:[.00,.16] },
+  { id:'torso',  label:'THORACIC — BMS / THERMAL',   color:'#00cfff', sensor:'V·I·T', x:[.18,.82], y:[.16,.52] },
+  { id:'imu',    label:'ABDOMINAL — IMU CORE',        color:'#9060ff', sensor:'Acc·Gyro', x:[.28,.72], y:[.45,.65] },
+  { id:'arm-l',  label:'LIMB L — MOTOR L / ACCEL X', color:'#f97316', sensor:'Tl·ax', x:[.00,.24], y:[.16,.68] },
+  { id:'arm-r',  label:'LIMB R — MOTOR R / ACCEL Y', color:'#f97316', sensor:'Tr·ay', x:[.76,1.0], y:[.16,.68] },
+  { id:'legs',   label:'VESTIBULAR — GYRO / AZ',     color:'#22c55e', sensor:'gz·az', x:[.20,.80], y:[.65,1.0] },
+];
+
+function getBodyRegion(nx, ny) {
+  for (const r of BODY_REGIONS) {
+    if (nx >= r.x[0] && nx <= r.x[1] && ny >= r.y[0] && ny <= r.y[1]) return r;
+  }
+  return null;
+}
+
+function resizeBodyOverlay() {
+  const wrap = document.getElementById('body-figure-wrap');
+  const img  = document.getElementById('body-img');
+  bodyOverlay.width  = img.offsetWidth  * devicePixelRatio;
+  bodyOverlay.height = img.offsetHeight * devicePixelRatio;
+  bodyCvCtx.scale(devicePixelRatio, devicePixelRatio);
+}
+
+function renderBodyOverlay() {
+  const w = bodyOverlay.width  / devicePixelRatio;
+  const h = bodyOverlay.height / devicePixelRatio;
+  bodyCvCtx.clearRect(0, 0, w, h);
+  if (bodyMX < 0 || !bodyRegion) { bodyRipple = 0; return; }
+
+  const r = bodyRegion;
+  bodyRipple = (bodyRipple + 0.06) % (Math.PI * 2);
+
+  // Parse hex color to rgb
+  const hx = r.color.slice(1);
+  const rc = [parseInt(hx.slice(0,2),16), parseInt(hx.slice(2,4),16), parseInt(hx.slice(4,6),16)];
+
+  // Outer ripple ring
+  const rippleR = 22 + 8*Math.sin(bodyRipple);
+  bodyCvCtx.beginPath();
+  bodyCvCtx.arc(bodyMX, bodyMY, rippleR, 0, Math.PI*2);
+  bodyCvCtx.strokeStyle = `rgba(${rc[0]},${rc[1]},${rc[2]},${0.25+0.15*Math.sin(bodyRipple)})`;
+  bodyCvCtx.lineWidth = 1;
+  bodyCvCtx.stroke();
+
+  // Inner glow radial gradient
+  const grd = bodyCvCtx.createRadialGradient(bodyMX, bodyMY, 0, bodyMX, bodyMY, 18);
+  grd.addColorStop(0,   `rgba(${rc[0]},${rc[1]},${rc[2]},0.35)`);
+  grd.addColorStop(0.5, `rgba(${rc[0]},${rc[1]},${rc[2]},0.12)`);
+  grd.addColorStop(1,   `rgba(${rc[0]},${rc[1]},${rc[2]},0)`);
+  bodyCvCtx.beginPath();
+  bodyCvCtx.arc(bodyMX, bodyMY, 18, 0, Math.PI*2);
+  bodyCvCtx.fillStyle = grd; bodyCvCtx.fill();
+
+  // Crosshair lines
+  bodyCvCtx.strokeStyle = `rgba(${rc[0]},${rc[1]},${rc[2]},0.55)`;
+  bodyCvCtx.lineWidth = 0.8;
+  bodyCvCtx.setLineDash([3, 3]);
+  bodyCvCtx.beginPath(); bodyCvCtx.moveTo(bodyMX-28, bodyMY); bodyCvCtx.lineTo(bodyMX+28, bodyMY); bodyCvCtx.stroke();
+  bodyCvCtx.beginPath(); bodyCvCtx.moveTo(bodyMX, bodyMY-28); bodyCvCtx.lineTo(bodyMX, bodyMY+28); bodyCvCtx.stroke();
+  bodyCvCtx.setLineDash([]);
+
+  // Center dot
+  bodyCvCtx.beginPath(); bodyCvCtx.arc(bodyMX, bodyMY, 2.5, 0, Math.PI*2);
+  bodyCvCtx.fillStyle = r.color; bodyCvCtx.fill();
+
+  // Region label
+  const lbl = document.getElementById('region-label');
+  lbl.style.display = 'block';
+  lbl.style.color   = r.color;
+  lbl.textContent   = r.label + ' [' + r.sensor + ']';
+}
+
+bodyOverlay.addEventListener('mousemove', (e) => {
+  const rect = bodyOverlay.getBoundingClientRect();
+  bodyMX = e.clientX - rect.left;
+  bodyMY = e.clientY - rect.top;
+  bodyRegion = getBodyRegion(bodyMX / rect.width, bodyMY / rect.height);
+  bodyOverlay.style.cursor = bodyRegion ? 'crosshair' : 'default';
+});
+bodyOverlay.addEventListener('mouseleave', () => {
+  bodyMX = -1; bodyMY = -1; bodyRegion = null;
+  bodyOverlay.style.cursor = 'default';
+  const lbl = document.getElementById('region-label');
+  if (lbl) lbl.style.display = 'none';
+});
+
+// Resize body overlay when image loads or window resizes
+document.getElementById('body-img').addEventListener('load', resizeBodyOverlay);
+if (document.getElementById('body-img').complete) resizeBodyOverlay();
+
+// ─────────────────────────────────────────────
+// Init
+// ─────────────────────────────────────────────
+window.addEventListener('resize', ()=>{ resizeIMU(); resizeHeatmap(); resizeBodyOverlay(); });
+requestAnimationFrame(frame);
+connectWS();
+
+setTimeout(()=>{
+  if (!wsConnected) {
+    addConsoleEntry("WebSocket not connected — running local fallback simulation. Start server.py to activate real tensor mode.");
+  }
+}, 2000);
+</script>
+</body>
+</html>
