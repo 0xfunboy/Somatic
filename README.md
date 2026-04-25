@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="docs/assets/LSF.png" width="120" alt="LSF Logo"/>
+  <img src="docs/assets/LSF.png" alt="LSF Logo"/>
 
   # Project Latent-Somatic Fusion
 
