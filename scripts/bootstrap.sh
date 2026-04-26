@@ -3,12 +3,14 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-LLAMA_DIR="${ROOT}/../llama.cpp"
+LLAMA_DIR="${LLAMA_CPP_ROOT:-/home/funboy/llama.cpp}"
 WEIGHTS="${ROOT}/weights/somatic_projector.pt"
 
 echo "=== [1/4] llama.cpp ==="
 if [ ! -d "$LLAMA_DIR" ]; then
-    git clone https://github.com/ggml-org/llama.cpp "$LLAMA_DIR"
+    echo "Missing llama.cpp checkout at $LLAMA_DIR"
+    echo "Set LLAMA_CPP_ROOT or create /home/funboy/llama.cpp before running bootstrap."
+    exit 1
 fi
 cmake -S "$LLAMA_DIR" -B "$LLAMA_DIR/build" -DLLAMA_CUDA=ON -DCMAKE_BUILD_TYPE=Release -DLLAMA_BUILD_TESTS=OFF
 cmake --build "$LLAMA_DIR/build" --config Release -j"$(nproc)"

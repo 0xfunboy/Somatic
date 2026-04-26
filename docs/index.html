@@ -543,12 +543,12 @@ footer{border-top:1px solid var(--border);padding:48px 0;background:var(--bg2)}
           <div class="dev-card-dots"><div class="dev-card-dot" style="background:#ef4444"></div><div class="dev-card-dot" style="background:#eab308"></div><div class="dev-card-dot" style="background:#22c55e"></div></div>
           <span>bootstrap.sh — Full setup</span>
         </div>
-        <pre><span class="token-comment"># 1. Clone and build llama.cpp (CPU or CUDA)</span>
-git clone https://github.com/ggml-org/llama.cpp
-cmake -S llama.cpp -B llama.cpp/build <span class="token-keyword">\</span>
+        <pre><span class="token-comment"># 1. Reuse the existing llama.cpp checkout on this machine</span>
+LLAMA_CPP_ROOT=/home/funboy/llama.cpp
+cmake -S "$LLAMA_CPP_ROOT" -B "$LLAMA_CPP_ROOT/build" <span class="token-keyword">\</span>
   -DGGML_CUDA=OFF  <span class="token-comment"># ON if NVIDIA GPU available</span>
   -DCMAKE_BUILD_TYPE=Release
-cmake --build llama.cpp/build -j$(nproc)
+cmake --build "$LLAMA_CPP_ROOT/build" -j$(nproc)
 
 <span class="token-comment"># 2. Install PyTorch (CPU build)</span>
 pip install torch --index-url <span class="token-keyword">\</span>
@@ -565,7 +565,7 @@ TORCH_CMAKE=$(python3 -c <span class="token-string">'import torch; \
   print(torch.utils.cmake_prefix_path)'</span>)
 cmake -S . -B build <span class="token-keyword">\</span>
   -DTORCH_DIR=$TORCH_CMAKE <span class="token-keyword">\</span>
-  -DLLAMA_DIR=../llama.cpp
+  -DLLAMA_DIR=$LLAMA_CPP_ROOT
 cmake --build build -j$(nproc)
 
 <span class="token-comment"># 5. Download a model and run</span>
@@ -579,7 +579,7 @@ cmake --build build -j$(nproc)
         <div style="padding:24px">
           <div class="timeline">
             <div class="tl-item"><div class="tl-num">01</div><div class="tl-body"><h4>Build toolchain</h4><p>GCC ≥ 13, CMake ≥ 3.20 (install via <code>pip install cmake</code>), ninja. LibTorch via PyTorch wheel.</p></div></div>
-            <div class="tl-item"><div class="tl-num">02</div><div class="tl-body"><h4>llama.cpp dependency</h4><p>Clone alongside project root. Build with <code>-DGGML_CUDA=ON</code> if NVIDIA GPU available. Library at <code>build/bin/libllama.so</code>.</p></div></div>
+            <div class="tl-item"><div class="tl-num">02</div><div class="tl-body"><h4>llama.cpp dependency</h4><p>Use the existing checkout at <code>/home/funboy/llama.cpp</code>. Build with <code>-DGGML_CUDA=ON</code> if NVIDIA GPU available. Library at <code>build/bin/libllama.so</code>.</p></div></div>
             <div class="tl-item"><div class="tl-num">03</div><div class="tl-body"><h4>Sensor training data</h4><p>Extend <code>CANONICAL_PAIRS</code> in <code>train_projector.py</code> or provide a JSONL file via <code>--extra-data</code>. Each pair: <code>{sensor: {...}, text: "..."}</code>.</p></div></div>
             <div class="tl-item"><div class="tl-num">04</div><div class="tl-body"><h4>I²C hardware bridge</h4><p>Replace mock readings in <code>HWInterface::read_sensors_i2c()</code>. Install <code>libi2c-dev</code>. Test with <code>i2cdetect -y 1</code>.</p></div></div>
             <div class="tl-item"><div class="tl-num">05</div><div class="tl-body"><h4>LLM model</h4><p>Any GGUF-format model. Recommended: <code>Meta-Llama-3-8B-Instruct-Q4_K_M.gguf</code>. Adjust <code>n_gpu_layers</code> in <code>LLMConfig</code> for your VRAM.</p></div></div>

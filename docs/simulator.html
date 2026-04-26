@@ -69,6 +69,11 @@ a.tb-link{text-decoration:none}
 .bg-bar{height:6px;background:var(--bg3);border-radius:3px;overflow:hidden;position:relative}
 .bg-fill{height:100%;border-radius:3px;transition:width .3s ease}
 .bg-val{font-size:10px;color:var(--text);text-align:right}
+.sys-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(104px,1fr));gap:8px;margin-top:10px}
+.sys-kv{padding:7px 8px;border:1px solid var(--border2);background:rgba(0,207,255,.03);border-radius:4px}
+.sys-kv-label{font-size:9px;color:var(--text3);letter-spacing:.08em;text-transform:uppercase}
+.sys-kv-value{font-size:11px;color:var(--text);margin-top:3px}
+.sys-meta{margin-top:8px;font-size:9px;color:var(--text3);line-height:1.5}
 
 /* IMU visualizer */
 #imu-canvas{width:100%;height:130px;display:block}
@@ -101,6 +106,7 @@ a.tb-link{text-decoration:none}
 .sc-btn.active{border-color:var(--cyan);color:var(--cyan);background:rgba(0,207,255,.1)}
 .sc-btn.danger.active{border-color:var(--red);color:var(--red);background:rgba(239,68,68,.1)}
 .sc-btn.warn.active{border-color:var(--orange);color:var(--orange);background:rgba(249,115,22,.1)}
+.sc-btn.disabled{opacity:.4;pointer-events:none}
 
 /* ── right: cognitive panel ── */
 #cog-panel{display:flex;flex-direction:column}
@@ -163,6 +169,11 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
 .typing-dot:nth-child(2){animation-delay:.2s}
 .typing-dot:nth-child(3){animation-delay:.4s}
 @keyframes tdot{0%,80%,100%{opacity:.3;transform:scale(.8)}40%{opacity:1;transform:scale(1)}}
+#chat-core-status{padding:8px 12px;border-bottom:1px solid var(--border2);font-size:10px;letter-spacing:.08em;text-transform:uppercase;flex-shrink:0}
+#chat-core-status.live{color:var(--green);background:rgba(34,197,94,.08)}
+#chat-core-status.server{color:var(--cyan);background:rgba(0,207,255,.06)}
+#chat-core-status.fallback{color:var(--yellow);background:rgba(234,179,8,.08)}
+#chat-core-status.offline{color:var(--orange);background:rgba(249,115,22,.08)}
 #chat-input-area{border-top:1px solid var(--border);padding:10px 12px;display:flex;gap:8px;align-items:center;flex-shrink:0;background:var(--bg2)}
 #chat-input{flex:1;background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:8px 12px;font-family:var(--mono);font-size:12px;color:var(--text);outline:none;resize:none;height:36px;line-height:1.4;transition:border-color .15s}
 #chat-input:focus{border-color:rgba(0,207,255,.4)}
@@ -201,9 +212,10 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
   </div>
   <div class="tb-sep"></div>
   <div class="tb-info">
-    <div class="tb-badge"><div class="dot dot-yellow" id="hw-dot"></div><span id="hw-mode">MOCK HARDWARE</span></div>
-    <div class="tb-badge"><div class="dot dot-red" id="ws-dot"></div><span id="ws-mode">WS DISCONNECTED</span></div>
-    <div class="tb-badge"><div class="dot dot-red" id="proj-dot"></div><span id="proj-mode">PROJECTOR OFFLINE</span></div>
+    <div class="tb-badge"><div class="dot dot-red" id="server-dot"></div><span id="server-mode">CNS LINK: OFFLINE</span></div>
+    <div class="tb-badge"><div class="dot dot-yellow" id="hw-dot"></div><span id="hw-mode">SENSOR PROVIDER: MOCK</span></div>
+    <div class="tb-badge"><div class="dot dot-red" id="ws-dot"></div><span id="ws-mode">PROJECTOR: OFF</span></div>
+    <div class="tb-badge"><div class="dot dot-yellow" id="proj-dot"></div><span id="proj-mode">LLM: FALLBACK</span></div>
   </div>
   <div class="tb-right">
     <button class="tb-btn active" id="btn-run" onclick="toggleRun()">
@@ -337,6 +349,151 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
             <div class="gyro-axis">YAW Z</div>
           </div>
         </div>
+      </div>
+
+      <div class="sensor-group">
+        <div class="sg-label"><span>SYSTEM TELEMETRY</span><span class="sg-unit">machine</span></div>
+        <div class="bar-gauge">
+          <div class="bg-row">
+            <span class="bg-label">CPU Load</span>
+            <div class="bg-bar"><div class="bg-fill" id="sys-cpu-fill" style="background:var(--cyan);width:0%"></div></div>
+            <span class="bg-val" id="sys-cpu-val">--</span>
+          </div>
+          <div class="bg-row">
+            <span class="bg-label">Memory</span>
+            <div class="bg-bar"><div class="bg-fill" id="sys-mem-fill" style="background:var(--purple2);width:0%"></div></div>
+            <span class="bg-val" id="sys-mem-val">--</span>
+          </div>
+          <div class="bg-row">
+            <span class="bg-label">Swap</span>
+            <div class="bg-bar"><div class="bg-fill" id="sys-swap-fill" style="background:var(--purple);width:0%"></div></div>
+            <span class="bg-val" id="sys-swap-val">--</span>
+          </div>
+          <div class="bg-row">
+            <span class="bg-label">CPU Temp</span>
+            <div class="bg-bar"><div class="bg-fill" id="sys-cput-fill" style="background:var(--green);width:0%"></div></div>
+            <span class="bg-val" id="sys-cput-val">--</span>
+          </div>
+          <div class="bg-row">
+            <span class="bg-label">CPU Power</span>
+            <div class="bg-bar"><div class="bg-fill" id="sys-cpup-fill" style="background:var(--yellow);width:0%"></div></div>
+            <span class="bg-val" id="sys-cpup-val">--</span>
+          </div>
+          <div class="bg-row">
+            <span class="bg-label">GPU Util</span>
+            <div class="bg-bar"><div class="bg-fill" id="sys-gpuu-fill" style="background:var(--purple2);width:0%"></div></div>
+            <span class="bg-val" id="sys-gpuu-val">--</span>
+          </div>
+          <div class="bg-row">
+            <span class="bg-label">GPU Temp</span>
+            <div class="bg-bar"><div class="bg-fill" id="sys-gput-fill" style="background:var(--orange);width:0%"></div></div>
+            <span class="bg-val" id="sys-gput-val">--</span>
+          </div>
+          <div class="bg-row">
+            <span class="bg-label">GPU Power</span>
+            <div class="bg-bar"><div class="bg-fill" id="sys-gpup-fill" style="background:var(--yellow);width:0%"></div></div>
+            <span class="bg-val" id="sys-gpup-val">--</span>
+          </div>
+          <div class="bg-row">
+            <span class="bg-label">VRAM</span>
+            <div class="bg-bar"><div class="bg-fill" id="sys-vram-fill" style="background:var(--purple2);width:0%"></div></div>
+            <span class="bg-val" id="sys-vram-val">--</span>
+          </div>
+          <div class="bg-row">
+            <span class="bg-label">Disk Use</span>
+            <div class="bg-bar"><div class="bg-fill" id="sys-disku-fill" style="background:var(--cyan2);width:0%"></div></div>
+            <span class="bg-val" id="sys-disku-val">--</span>
+          </div>
+          <div class="bg-row">
+            <span class="bg-label">Disk Busy</span>
+            <div class="bg-bar"><div class="bg-fill" id="sys-diskb-fill" style="background:var(--orange);width:0%"></div></div>
+            <span class="bg-val" id="sys-diskb-val">--</span>
+          </div>
+          <div class="bg-row">
+            <span class="bg-label">Net Down</span>
+            <div class="bg-bar"><div class="bg-fill" id="sys-netd-fill" style="background:var(--cyan);width:0%"></div></div>
+            <span class="bg-val" id="sys-netd-val">--</span>
+          </div>
+          <div class="bg-row">
+            <span class="bg-label">Net Up</span>
+            <div class="bg-bar"><div class="bg-fill" id="sys-netu-fill" style="background:var(--cyan2);width:0%"></div></div>
+            <span class="bg-val" id="sys-netu-val">--</span>
+          </div>
+          <div class="bg-row">
+            <span class="bg-label">Battery</span>
+            <div class="bg-bar"><div class="bg-fill" id="sys-batt-fill" style="background:var(--green);width:0%"></div></div>
+            <span class="bg-val" id="sys-batt-val">--</span>
+          </div>
+          <div class="bg-row">
+            <span class="bg-label">Fan RPM</span>
+            <div class="bg-bar"><div class="bg-fill" id="sys-fan-fill" style="background:var(--cyan2);width:0%"></div></div>
+            <span class="bg-val" id="sys-fan-val">--</span>
+          </div>
+          <div class="bg-row">
+            <span class="bg-label">Disk Temp</span>
+            <div class="bg-bar"><div class="bg-fill" id="sys-diskt-fill" style="background:var(--orange);width:0%"></div></div>
+            <span class="bg-val" id="sys-diskt-val">--</span>
+          </div>
+        </div>
+        <div class="sys-grid">
+          <div class="sys-kv">
+            <div class="sys-kv-label">Source</div>
+            <div class="sys-kv-value" id="sys-source">synthetic</div>
+          </div>
+          <div class="sys-kv">
+            <div class="sys-kv-label">Server</div>
+            <div class="sys-kv-value" id="sys-server">local fallback</div>
+          </div>
+          <div class="sys-kv">
+            <div class="sys-kv-label">AC Online</div>
+            <div class="sys-kv-value" id="sys-ac">--</div>
+          </div>
+          <div class="sys-kv">
+            <div class="sys-kv-label">CPU Topology</div>
+            <div class="sys-kv-value" id="sys-cpu-topo">--</div>
+          </div>
+          <div class="sys-kv">
+            <div class="sys-kv-label">RAM</div>
+            <div class="sys-kv-value" id="sys-ram">--</div>
+          </div>
+          <div class="sys-kv">
+            <div class="sys-kv-label">Disk</div>
+            <div class="sys-kv-value" id="sys-disk">--</div>
+          </div>
+          <div class="sys-kv">
+            <div class="sys-kv-label">GPU VRAM</div>
+            <div class="sys-kv-value" id="sys-gpu-mem">--</div>
+          </div>
+          <div class="sys-kv">
+            <div class="sys-kv-label">Network</div>
+            <div class="sys-kv-value" id="sys-net">--</div>
+          </div>
+          <div class="sys-kv">
+            <div class="sys-kv-label">Core Load Map</div>
+            <div class="sys-kv-value" id="sys-core-map">--</div>
+          </div>
+          <div class="sys-kv">
+            <div class="sys-kv-label">Thermal Map</div>
+            <div class="sys-kv-value" id="sys-thermals">--</div>
+          </div>
+          <div class="sys-kv">
+            <div class="sys-kv-label">Fan Bank</div>
+            <div class="sys-kv-value" id="sys-fans-detail">--</div>
+          </div>
+          <div class="sys-kv">
+            <div class="sys-kv-label">Policy</div>
+            <div class="sys-kv-value" id="sys-policy">--</div>
+          </div>
+          <div class="sys-kv">
+            <div class="sys-kv-label">Actuator</div>
+            <div class="sys-kv-value" id="sys-actuation">--</div>
+          </div>
+          <div class="sys-kv">
+            <div class="sys-kv-label">Fusion</div>
+            <div class="sys-kv-value" id="sys-fusion">--</div>
+          </div>
+        </div>
+        <div class="sys-meta" id="sys-meta">CPU/GPU metrics appear when the provider has access to real machine telemetry.</div>
       </div>
 
     </div>
@@ -514,6 +671,7 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
       <button class="sc-btn active" id="sc-nominal" onclick="setScenario('nominal')">NOMINAL</button>
       <button class="sc-btn warn" id="sc-lowbatt" onclick="setScenario('lowbatt')">LOW BATT</button>
       <button class="sc-btn warn" id="sc-overheat" onclick="setScenario('overheat')">OVERHEAT</button>
+      <button class="sc-btn warn" id="sc-cold" onclick="setScenario('cold')">COLD</button>
       <button class="sc-btn danger" id="sc-fall" onclick="setScenario('fall')">FALLING</button>
       <button class="sc-btn danger" id="sc-spin" onclick="setScenario('spin')">SPINNING</button>
       <button class="sc-btn warn" id="sc-heavyload" onclick="setScenario('heavyload')">HEAVY LOAD</button>
@@ -570,7 +728,7 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
         <div class="lf-title">Data Flow Trace</div>
         <div class="lf-step">
           <div class="lf-dot" style="background:var(--green)" id="dot-hw"></div>
-          <span class="lf-text">Hardware snapshot()</span>
+          <span class="lf-text">sensor_provider.read()</span>
           <span class="lf-latency" id="lat-hw">0ms</span>
         </div>
         <span class="lf-arrow">↓</span>
@@ -582,13 +740,13 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
         <span class="lf-arrow">↓</span>
         <div class="lf-step">
           <div class="lf-dot" style="background:var(--purple2)" id="dot-inject"></div>
-          <span class="lf-text">llama_batch.embd inject</span>
+          <span class="lf-text">build_somatic_context()</span>
           <span class="lf-latency" id="lat-inject">0ms</span>
         </div>
         <span class="lf-arrow">↓</span>
         <div class="lf-step">
           <div class="lf-dot" style="background:var(--orange)" id="dot-gen"></div>
-          <span class="lf-text">Autoregressive generation</span>
+          <span class="lf-text">LLM / fallback response</span>
           <span class="lf-latency" id="lat-gen">0ms</span>
         </div>
       </div>
@@ -597,13 +755,14 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
         <div class="llm-entry">
           <div class="llm-ts">SYSTEM // 00:00:00</div>
           <div class="llm-state">→ INITIALIZING</div>
-          <div class="llm-text">Latent-Somatic Fusion simulator initialized. Sensor mock data active. Somatic projector loaded. Awaiting first cognitive cycle...<span class="llm-cursor"></span></div>
+          <div class="llm-text">Latent-Somatic Fusion interface initialized. Waiting for provider and projector state...<span class="llm-cursor"></span></div>
         </div>
       </div>
     </div>
 
     <!-- CHAT pane -->
     <div class="tab-pane" id="pane-chat">
+      <div id="chat-core-status" class="offline">CHAT CORE: LOCAL FALLBACK (BACKEND OFFLINE)</div>
       <div id="chat-messages">
         <div class="msg msg-entity">
           <div class="msg-state-tag">ENTITY // ONLINE</div>
@@ -645,6 +804,74 @@ let serverHeatmap = null;
 const S = { voltage:11.8, current_ma:2000, temp_si:45, temp_ml:40, temp_mr:40,
             ax:0, ay:0, az:-9.81, gx:0, gy:0, gz:0 };
 
+const SYSTEM = {
+  cpu_percent:null,
+  cpu_count_logical:null,
+  cpu_count_physical:null,
+  cpu_freq_mhz:null,
+  cpu_per_core_percent:null,
+  memory_percent:null,
+  memory_used_gb:null,
+  memory_total_gb:null,
+  memory_available_gb:null,
+  swap_percent:null,
+  swap_used_gb:null,
+  swap_total_gb:null,
+  cpu_temp:null,
+  cpu_temp_sensors_c:null,
+  cpu_power_w:null,
+  disk_used_percent:null,
+  disk_total_gb:null,
+  disk_used_gb:null,
+  disk_free_gb:null,
+  disk_read_mb_s:null,
+  disk_write_mb_s:null,
+  disk_busy_percent:null,
+  disk_temp:null,
+  gpu_temp:null,
+  gpu_power_w:null,
+  gpu_memory_used_mb:null,
+  gpu_memory_total_mb:null,
+  battery_percent:null,
+  fan_rpm:null,
+  source_quality:0.12,
+  source_quality_label:'synthetic',
+  gpu_util_percent:null,
+  gpu_memory_percent:null,
+  net_up_mbps:null,
+  net_down_mbps:null,
+  thermal_sensors_c:null,
+  fan_sensors_rpm:null,
+  load_1:null,
+  load_5:null,
+  load_15:null,
+  ac_online:null,
+  battery_plugged:null,
+};
+
+const avatarState = {
+  provider:'mock',
+  providerMode:'mock',
+  providerLabel:'MOCK',
+  projectorMode:'fallback',
+  projectorAvailable:false,
+  llmMode:'off',
+  llmEnabled:false,
+  policyMode:'nominal',
+  actuatorTransport:'file',
+  fusionMode:'analytic',
+  cold:0.12,
+  heat:0.18,
+  energyLow:0.12,
+  fatigue:0.14,
+  instability:0.02,
+  curiosity:0.5,
+  currentAction:'attend_user',
+  affect:{ cold:0.12, heat:0.18, energy_low:0.12, fatigue:0.14, instability:0.02, curiosity:0.5 },
+  actions:[{ type:'animation', name:'attend_user', intensity:0.35 }],
+  lastAction:'attend_user',
+};
+
 // Simulated somatic vector (256 samples from ℝ⁴⁰⁹⁶)
 const somaticVec = new Float32Array(256).fill(0);
 
@@ -658,6 +885,8 @@ const scenarios = {
                ax:[-0.1,0.1], ay:[-0.1,0.1], az:[-9.85,-9.75], gx:[-0.01,0.01], gy:[-0.01,0.01], gz:[-0.01,0.01] },
   overheat:  { volt:[11.6,12.0], curr:[3500,4500], tsi:[78,90], tml:[70,85], tmr:[68,80],
                ax:[-0.1,0.1], ay:[-0.1,0.1], az:[-9.82,-9.78], gx:[-0.01,0.01], gy:[-0.01,0.01], gz:[-0.01,0.01] },
+  cold:      { volt:[11.9,12.4], curr:[600,1200], tsi:[10,22], tml:[8,18], tmr:[8,18],
+               ax:[-0.15,0.15], ay:[-0.15,0.15], az:[-9.88,-9.76], gx:[-0.03,0.03], gy:[-0.03,0.03], gz:[-0.02,0.02] },
   fall:      { volt:[11.5,12.1], curr:[1500,2000], tsi:[42,50], tml:[38,46], tmr:[38,46],
                ax:[-2.0,2.0], ay:[3.0,6.0], az:[-5.0,-2.0], gx:[1.5,3.5], gy:[0.5,1.5], gz:[-0.5,0.5] },
   spin:      { volt:[11.3,11.9], curr:[2200,3000], tsi:[50,60], tml:[45,55], tmr:[45,55],
@@ -669,6 +898,30 @@ const scenarios = {
 function lerp(a, b, alpha) { return a + (b-a)*alpha; }
 function rnd(min, max) { return min + Math.random()*(max-min); }
 function clamp(v,min,max){ return Math.max(min,Math.min(max,v)); }
+function fmtMaybe(v, digits=1, suffix='') {
+  return v === null || v === undefined || Number.isNaN(v) ? '--' : `${Number(v).toFixed(digits)}${suffix}`;
+}
+function fmtPair(a, b, digits=1, suffix='') {
+  if ([a, b].some(v => v === null || v === undefined || Number.isNaN(v))) return '--';
+  return `${Number(a).toFixed(digits)}/${Number(b).toFixed(digits)}${suffix}`;
+}
+function fmtSeries(values, digits=1, suffix='', limit=8) {
+  if (!Array.isArray(values) || !values.length) return '--';
+  return values
+    .slice(0, limit)
+    .map(v => (v === null || v === undefined || Number.isNaN(v)) ? '--' : `${Number(v).toFixed(digits)}${suffix}`)
+    .join(', ');
+}
+function truthyBoolLabel(v) {
+  if (v === true) return 'ONLINE';
+  if (v === false) return 'OFFLINE';
+  return '--';
+}
+function normalizeAffectValue(v, fallback=0) {
+  const num = Number(v);
+  if (!Number.isFinite(num)) return fallback;
+  return clamp(num, 0, 1);
+}
 
 // ─────────────────────────────────────────────
 // LLM response templates (simulated)
@@ -683,6 +936,9 @@ const responses = {
   overheat:  ["Thermal warning across all nodes. Silicon temperature {t}°C. I am overheating. Reducing cognitive load.",
               "Heat is building in the motor stacks — {t}°C. This state is not sustainable. I feel the throttle approaching.",
               "⚠ Thermal limit imminent. {t}°C on silicon. Motor L at {ml}°C. Requesting cooling or load reduction."],
+  cold:      ["Temperature dropping below comfort range. Silicon {t}°C. My body is entering a cold-state posture to preserve stability.",
+              "I feel the cold in every idle cycle. Core temperature {t}°C, motor nodes {ml}°C and {mr}°C. Motion is becoming conservative.",
+              "Cold-state active. Thermal energy is low, but structural stability remains intact. I am reducing expressive amplitude."],
   fall:      ["Gravity vector anomalous — Z-axis reading {z} m/s². I am not upright. Balance compromised. Fall sequence detected.",
               "⚠ Orientation failure. Accelerometer registering {z} m/s² on Z with significant X/Y deviation. Impact imminent.",
               "I am falling. The IMU data is unambiguous: Z-gravity {z}, pitch rate {gx} rad/s. Survival protocol engaged."],
@@ -735,6 +991,140 @@ function updateSensors() {
   S.gx         = lerp(S.gx,        rnd(c.gx[0], c.gx[1]) + 0.01*Math.sin(t*3), 0.06);
   S.gy         = lerp(S.gy,        rnd(c.gy[0], c.gy[1]) + 0.01*Math.cos(t*2.8), 0.06);
   S.gz         = lerp(S.gz,        rnd(c.gz[0], c.gz[1]) + 0.005*Math.sin(t*1.2), 0.06);
+
+  syncFallbackSystem();
+  const localAffect = deriveLocalAffect();
+  applyAffectActions(localAffect, deriveLocalActions(localAffect));
+}
+
+function syncFallbackSystem() {
+  const baseLoad = { nominal:24, lowbatt:18, overheat:78, cold:10, fall:34, spin:42, heavyload:92 }[scenario] || 24;
+  const battery = scenario === 'lowbatt' ? clamp((S.voltage - 9.7) / 1.4 * 100, 4, 28) : clamp((S.voltage - 10.6) / 1.7 * 100, 48, 100);
+  const memTotalGb = 31.2;
+  const swapTotalGb = 8.0;
+  const diskTotalGb = 953.9;
+  const gpuMemTotalMb = 12288;
+  SYSTEM.cpu_percent = lerp(SYSTEM.cpu_percent ?? baseLoad, baseLoad + 6*Math.sin(t*0.4), 0.05);
+  SYSTEM.cpu_count_logical = 16;
+  SYSTEM.cpu_count_physical = 8;
+  SYSTEM.cpu_freq_mhz = lerp(SYSTEM.cpu_freq_mhz ?? 3850, 3200 + baseLoad * 11, 0.04);
+  SYSTEM.cpu_per_core_percent = Array.from({length:8}, (_, idx) =>
+    clamp((SYSTEM.cpu_percent ?? baseLoad) + Math.sin(t * (0.5 + idx * 0.07)) * 11 + idx * 1.8, 2, 100)
+  );
+  SYSTEM.memory_percent = lerp(SYSTEM.memory_percent ?? 42, 38 + baseLoad * 0.35, 0.04);
+  SYSTEM.memory_total_gb = memTotalGb;
+  SYSTEM.memory_used_gb = memTotalGb * ((SYSTEM.memory_percent ?? 42) / 100);
+  SYSTEM.memory_available_gb = memTotalGb - SYSTEM.memory_used_gb;
+  SYSTEM.swap_percent = lerp(SYSTEM.swap_percent ?? 4, scenario === 'heavyload' ? 28 : 6 + baseLoad * 0.08, 0.04);
+  SYSTEM.swap_total_gb = swapTotalGb;
+  SYSTEM.swap_used_gb = swapTotalGb * ((SYSTEM.swap_percent ?? 4) / 100);
+  SYSTEM.cpu_temp = lerp(SYSTEM.cpu_temp ?? S.temp_si, S.temp_si + baseLoad * 0.08, 0.04);
+  SYSTEM.cpu_temp_sensors_c = [SYSTEM.cpu_temp, (SYSTEM.cpu_temp ?? S.temp_si) - 2.3, (SYSTEM.cpu_temp ?? S.temp_si) - 4.7]
+    .map(v => clamp(v, 8, 100));
+  SYSTEM.cpu_power_w = lerp(SYSTEM.cpu_power_w ?? 18, 8 + baseLoad * 0.42, 0.04);
+  SYSTEM.gpu_temp = lerp(
+    SYSTEM.gpu_temp ?? (scenario === 'cold' ? 22 : (scenario === 'nominal' ? 46 : 54)),
+    (scenario === 'heavyload' ? 73 : scenario === 'cold' ? 20 + baseLoad * 0.2 : 46 + baseLoad * 0.18),
+    0.04
+  );
+  SYSTEM.gpu_power_w = lerp(
+    SYSTEM.gpu_power_w ?? (scenario === 'cold' ? 6 : 12),
+    (scenario === 'heavyload' ? 118 : scenario === 'cold' ? 8 + baseLoad * 0.18 : 22 + baseLoad * 0.22),
+    0.04
+  );
+  SYSTEM.battery_percent = lerp(SYSTEM.battery_percent ?? battery, battery, 0.08);
+  SYSTEM.fan_rpm = lerp(SYSTEM.fan_rpm ?? 1200, 900 + baseLoad * 28, 0.05);
+  SYSTEM.fan_sensors_rpm = [SYSTEM.fan_rpm, (SYSTEM.fan_rpm ?? 1200) * 0.82].map(v => clamp(v, 300, 6500));
+  SYSTEM.gpu_util_percent = lerp(SYSTEM.gpu_util_percent ?? 18, Math.max(0, baseLoad - 8), 0.05);
+  SYSTEM.gpu_memory_percent = lerp(SYSTEM.gpu_memory_percent ?? 24, 18 + baseLoad * 0.25, 0.05);
+  SYSTEM.gpu_memory_total_mb = gpuMemTotalMb;
+  SYSTEM.gpu_memory_used_mb = gpuMemTotalMb * ((SYSTEM.gpu_memory_percent ?? 24) / 100);
+  SYSTEM.disk_used_percent = lerp(SYSTEM.disk_used_percent ?? 54, 52 + baseLoad * 0.09, 0.03);
+  SYSTEM.disk_total_gb = diskTotalGb;
+  SYSTEM.disk_used_gb = diskTotalGb * ((SYSTEM.disk_used_percent ?? 54) / 100);
+  SYSTEM.disk_free_gb = diskTotalGb - SYSTEM.disk_used_gb;
+  SYSTEM.disk_busy_percent = lerp(SYSTEM.disk_busy_percent ?? 8, scenario === 'heavyload' ? 71 : 9 + baseLoad * 0.22, 0.04);
+  SYSTEM.disk_read_mb_s = lerp(SYSTEM.disk_read_mb_s ?? 22, scenario === 'heavyload' ? 310 : 35 + baseLoad * 0.8, 0.04);
+  SYSTEM.disk_write_mb_s = lerp(SYSTEM.disk_write_mb_s ?? 12, scenario === 'heavyload' ? 240 : 18 + baseLoad * 0.6, 0.04);
+  SYSTEM.disk_temp = lerp(SYSTEM.disk_temp ?? 39, scenario === 'cold' ? 22 : 35 + baseLoad * 0.16, 0.03);
+  SYSTEM.net_down_mbps = lerp(SYSTEM.net_down_mbps ?? 12, scenario === 'heavyload' ? 640 : 30 + baseLoad * 1.6, 0.05);
+  SYSTEM.net_up_mbps = lerp(SYSTEM.net_up_mbps ?? 6, scenario === 'heavyload' ? 210 : 10 + baseLoad * 0.9, 0.05);
+  SYSTEM.net_mbps = (SYSTEM.net_down_mbps ?? 0) + (SYSTEM.net_up_mbps ?? 0);
+  SYSTEM.thermal_sensors_c = [
+    SYSTEM.cpu_temp,
+    SYSTEM.gpu_temp,
+    SYSTEM.disk_temp,
+    S.temp_si,
+    S.temp_ml,
+    S.temp_mr,
+  ].filter(v => v !== null && v !== undefined).map(v => clamp(Number(v), 8, 100));
+  SYSTEM.load_1 = lerp(SYSTEM.load_1 ?? 1.2, 0.9 + baseLoad / 18, 0.04);
+  SYSTEM.load_5 = lerp(SYSTEM.load_5 ?? 1.0, 0.8 + baseLoad / 21, 0.03);
+  SYSTEM.load_15 = lerp(SYSTEM.load_15 ?? 0.9, 0.7 + baseLoad / 24, 0.02);
+  SYSTEM.ac_online = scenario !== 'lowbatt';
+  SYSTEM.battery_plugged = scenario !== 'lowbatt';
+  SYSTEM.source_quality = 0.12;
+  SYSTEM.source_quality_label = `synthetic:${scenario}`;
+}
+
+function deriveLocalAffect() {
+  const cpuTemp = SYSTEM.cpu_temp ?? S.temp_si;
+  const gpuTemp = SYSTEM.gpu_temp ?? S.temp_mr;
+  const battery = SYSTEM.battery_percent;
+  const heat = clamp((Math.max(S.temp_si, cpuTemp, gpuTemp) - 48) / 35, 0, 1);
+  const cold = clamp((28 - Math.min(S.temp_si, S.temp_ml, S.temp_mr)) / 18, 0, 1);
+  const energyLow = battery === null || battery === undefined
+    ? clamp((11.2 - S.voltage) / 1.2, 0, 1)
+    : clamp((35 - battery) / 35, 0, 1);
+  const fatigue = clamp(Math.max(heat * 0.85, energyLow * 0.95, (SYSTEM.cpu_percent ?? 0) / 130, S.current_ma / 9000), 0, 1);
+  const instability = clamp((Math.abs(Math.abs(S.az) - 9.81) / 4.5) + (Math.abs(S.gz) / 4) + (Math.max(Math.abs(S.gx), Math.abs(S.gy)) / 5), 0, 1);
+  const curiosity = clamp(0.3 + ((SYSTEM.cpu_percent ?? 0) / 260) + ((SYSTEM.gpu_util_percent ?? 0) / 260) + ((1 - fatigue) * 0.25), 0, 1);
+  return {
+    cold,
+    heat,
+    energy_low:energyLow,
+    fatigue,
+    instability,
+    curiosity,
+  };
+}
+
+function deriveLocalActions(affect) {
+  const actions = [];
+  if (affect.instability >= 0.55) actions.push({ type:'animation', name:'brace_balance', intensity:affect.instability });
+  if (affect.heat >= 0.65) actions.push({ type:'animation', name: affect.heat >= 0.8 ? 'wipe_forehead' : 'cooling_idle', intensity:affect.heat });
+  if (affect.cold >= 0.55) actions.push({ type:'animation', name:'cold_shiver', intensity:affect.cold });
+  if (affect.energy_low >= 0.6) actions.push({ type:'animation', name:'low_power_posture', intensity:affect.energy_low });
+  if (!actions.length) actions.push({ type:'animation', name:'attend_user', intensity:Math.max(0.25, affect.curiosity) });
+  return actions.slice(0, 3);
+}
+
+function applyAffectActions(affect, actions) {
+  const nextAffect = affect || {};
+  avatarState.affect = {
+    cold: normalizeAffectValue(nextAffect.cold, avatarState.affect.cold),
+    heat: normalizeAffectValue(nextAffect.heat, avatarState.affect.heat),
+    energy_low: normalizeAffectValue(nextAffect.energy_low, avatarState.affect.energy_low),
+    fatigue: normalizeAffectValue(nextAffect.fatigue, avatarState.affect.fatigue),
+    instability: normalizeAffectValue(nextAffect.instability, avatarState.affect.instability),
+    curiosity: normalizeAffectValue(nextAffect.curiosity, avatarState.affect.curiosity),
+  };
+
+  const normalizedActions = Array.isArray(actions) ? actions.map(action => ({
+    type: action?.type || 'animation',
+    name: action?.name || 'attend_user',
+    intensity: normalizeAffectValue(action?.intensity, 0.4),
+  })) : [];
+
+  avatarState.actions = normalizedActions;
+  avatarState.lastAction = normalizedActions[0]?.name || 'idle';
+  avatarState.currentAction = avatarState.lastAction;
+  avatarState.cold = avatarState.affect.cold;
+  avatarState.heat = avatarState.affect.heat;
+  avatarState.energyLow = avatarState.affect.energy_low;
+  avatarState.fatigue = avatarState.affect.fatigue;
+  avatarState.instability = avatarState.affect.instability;
+  avatarState.curiosity = avatarState.affect.curiosity;
 }
 
 // ─────────────────────────────────────────────
@@ -797,6 +1187,76 @@ function renderSensors() {
     document.getElementById(id+'-val').textContent = val.toFixed(3);
   }
   setRing('gx', S.gx, 5); setRing('gy', S.gy, 5); setRing('gz', S.gz, 5);
+
+  renderSystemTelemetry();
+}
+
+function setTelemetryBar(prefix, value, maxValue, suffix, colorFn) {
+  const fill = document.getElementById(`${prefix}-fill`);
+  const val = document.getElementById(`${prefix}-val`);
+  if (value === null || value === undefined || Number.isNaN(value)) {
+    fill.style.width = '0%';
+    fill.style.opacity = '0.25';
+    val.textContent = '--';
+    return;
+  }
+  const pct = clamp(Number(value) / maxValue, 0, 1) * 100;
+  fill.style.width = pct + '%';
+  fill.style.opacity = '1';
+  fill.style.background = colorFn(Number(value));
+  val.textContent = `${Number(value).toFixed(suffix === 'rpm' ? 0 : 1)}${suffix}`;
+}
+
+function renderSystemTelemetry() {
+  setTelemetryBar('sys-cpu', SYSTEM.cpu_percent, 100, '%', v => v > 85 ? 'var(--red)' : v > 65 ? 'var(--orange)' : 'var(--cyan)');
+  setTelemetryBar('sys-mem', SYSTEM.memory_percent, 100, '%', v => v > 90 ? 'var(--red)' : v > 75 ? 'var(--orange)' : 'var(--purple2)');
+  setTelemetryBar('sys-swap', SYSTEM.swap_percent, 100, '%', v => v > 65 ? 'var(--red)' : v > 35 ? 'var(--orange)' : 'var(--purple)');
+  setTelemetryBar('sys-cput', SYSTEM.cpu_temp, 100, 'C', tempColor);
+  setTelemetryBar('sys-cpup', SYSTEM.cpu_power_w, 150, 'W', v => v > 95 ? 'var(--red)' : v > 55 ? 'var(--orange)' : 'var(--yellow)');
+  setTelemetryBar('sys-gpuu', SYSTEM.gpu_util_percent, 100, '%', v => v > 90 ? 'var(--red)' : v > 70 ? 'var(--orange)' : 'var(--purple2)');
+  setTelemetryBar('sys-gput', SYSTEM.gpu_temp, 100, 'C', tempColor);
+  setTelemetryBar('sys-gpup', SYSTEM.gpu_power_w, 200, 'W', v => v > 150 ? 'var(--red)' : v > 100 ? 'var(--orange)' : 'var(--yellow)');
+  setTelemetryBar('sys-vram', SYSTEM.gpu_memory_percent, 100, '%', v => v > 92 ? 'var(--red)' : v > 75 ? 'var(--orange)' : 'var(--purple2)');
+  setTelemetryBar('sys-disku', SYSTEM.disk_used_percent, 100, '%', v => v > 95 ? 'var(--red)' : v > 80 ? 'var(--orange)' : 'var(--cyan2)');
+  setTelemetryBar('sys-diskb', SYSTEM.disk_busy_percent, 100, '%', v => v > 85 ? 'var(--red)' : v > 60 ? 'var(--orange)' : 'var(--yellow)');
+  setTelemetryBar('sys-netd', SYSTEM.net_down_mbps, 10000, 'Mb', v => v > 5000 ? 'var(--orange)' : 'var(--cyan)');
+  setTelemetryBar('sys-netu', SYSTEM.net_up_mbps, 5000, 'Mb', v => v > 2500 ? 'var(--orange)' : 'var(--cyan2)');
+  setTelemetryBar('sys-batt', SYSTEM.battery_percent, 100, '%', v => v < 20 ? 'var(--red)' : v < 40 ? 'var(--orange)' : 'var(--green)');
+  setTelemetryBar('sys-fan', SYSTEM.fan_rpm, 6000, 'rpm', v => v > 4500 ? 'var(--orange)' : v > 2500 ? 'var(--cyan)' : 'var(--cyan2)');
+  setTelemetryBar('sys-diskt', SYSTEM.disk_temp, 100, 'C', tempColor);
+
+  const qualityLabel = SYSTEM.source_quality_label || 'unknown';
+  const qualityValue = SYSTEM.source_quality === null || SYSTEM.source_quality === undefined ? 'n/a' : Number(SYSTEM.source_quality).toFixed(2);
+  const gpuMemUsedGb = SYSTEM.gpu_memory_used_mb === null || SYSTEM.gpu_memory_used_mb === undefined
+    ? null : SYSTEM.gpu_memory_used_mb / 1024;
+  const gpuMemTotalGb = SYSTEM.gpu_memory_total_mb === null || SYSTEM.gpu_memory_total_mb === undefined
+    ? null : SYSTEM.gpu_memory_total_mb / 1024;
+  document.getElementById('sys-source').textContent = `${qualityLabel.toUpperCase()} (${qualityValue})`;
+  document.getElementById('sys-server').textContent = wsConnected ? 'backend online' : 'local fallback';
+  document.getElementById('sys-ac').textContent = truthyBoolLabel(SYSTEM.ac_online);
+  document.getElementById('sys-cpu-topo').textContent =
+    `${SYSTEM.cpu_count_logical ?? '--'}L/${SYSTEM.cpu_count_physical ?? '--'}P @ ${fmtMaybe(SYSTEM.cpu_freq_mhz, 0, 'MHz')}`;
+  document.getElementById('sys-ram').textContent =
+    `${fmtPair(SYSTEM.memory_used_gb, SYSTEM.memory_total_gb, 1, 'GB')} · free ${fmtMaybe(SYSTEM.memory_available_gb, 1, 'GB')}`;
+  document.getElementById('sys-disk').textContent =
+    `${fmtPair(SYSTEM.disk_used_gb, SYSTEM.disk_total_gb, 0, 'GB')} · ${fmtMaybe(SYSTEM.disk_free_gb, 0, 'GB')} free`;
+  document.getElementById('sys-gpu-mem').textContent =
+    `${fmtPair(gpuMemUsedGb, gpuMemTotalGb, 1, 'GB')}`;
+  document.getElementById('sys-net').textContent =
+    `↓ ${fmtMaybe(SYSTEM.net_down_mbps, 1, 'Mb')} ↑ ${fmtMaybe(SYSTEM.net_up_mbps, 1, 'Mb')}`;
+  document.getElementById('sys-core-map').textContent = fmtSeries(SYSTEM.cpu_per_core_percent, 0, '%', 8);
+  document.getElementById('sys-thermals').textContent = fmtSeries(SYSTEM.thermal_sensors_c, 1, 'C', 8);
+  document.getElementById('sys-fans-detail').textContent = fmtSeries(SYSTEM.fan_sensors_rpm, 0, 'rpm', 4);
+  document.getElementById('sys-policy').textContent = String(avatarState.policyMode || '--').toUpperCase();
+  document.getElementById('sys-actuation').textContent = avatarState.actuatorTransport
+    ? `${String(avatarState.actuatorTransport).toUpperCase()} / ${avatarState.currentAction || '--'}`
+    : '--';
+  document.getElementById('sys-fusion').textContent = String(avatarState.fusionMode || 'analytic').toUpperCase();
+  document.getElementById('sys-meta').textContent =
+    `CPU ${fmtMaybe(SYSTEM.cpu_temp, 1, 'C')} / ${fmtMaybe(SYSTEM.cpu_power_w, 1, 'W')} / L${fmtMaybe(SYSTEM.load_1, 2)}-${fmtMaybe(SYSTEM.load_5, 2)}-${fmtMaybe(SYSTEM.load_15, 2)} | ` +
+    `GPU ${fmtMaybe(SYSTEM.gpu_temp, 1, 'C')} / ${fmtMaybe(SYSTEM.gpu_power_w, 1, 'W')} / ${fmtMaybe(SYSTEM.gpu_util_percent, 1, '%')} | ` +
+    `Disk ${fmtMaybe(SYSTEM.disk_temp, 1, 'C')} / R${fmtMaybe(SYSTEM.disk_read_mb_s, 1, 'MB/s')} / W${fmtMaybe(SYSTEM.disk_write_mb_s, 1, 'MB/s')} | ` +
+    `Fans ${fmtMaybe(SYSTEM.fan_rpm, 0, 'rpm')} | AC ${truthyBoolLabel(SYSTEM.ac_online)}`;
 }
 
 // ─────────────────────────────────────────────
@@ -941,6 +1401,11 @@ function renderHeatmap() {
 let pulsePhase = 0;
 function renderBody() {
   pulsePhase += 0.05;
+  const cold = avatarState.affect.cold || 0;
+  const heat = avatarState.affect.heat || 0;
+  const energyLow = avatarState.affect.energy_low || 0;
+  const instability = avatarState.affect.instability || 0;
+  const curiosity = avatarState.affect.curiosity || 0;
 
   // BMS display
   document.getElementById('bms-display').textContent = S.voltage.toFixed(2)+'V';
@@ -964,7 +1429,7 @@ function renderBody() {
   });
 
   // Head glow based on LLM activity
-  const headPulse = 0.5 + 0.3*Math.sin(pulsePhase*1.5);
+  const headPulse = 0.5 + 0.3*Math.sin(pulsePhase*1.5) + curiosity * 0.22;
   document.getElementById('brain-node').setAttribute('fill', `rgba(112,64,232,${headPulse*0.3})`);
 
   // Temp node colors
@@ -982,17 +1447,26 @@ function renderBody() {
   // Body tilt based on IMU
   const tiltX = clamp(S.ay/9.81, -1, 1) * 8;
   const tiltY = clamp(S.ax/9.81, -1, 1) * 6;
+  const wobble = instability * Math.sin(pulsePhase * 2.8) * 5.5;
+  const droop = energyLow * 8;
   document.getElementById('body-svg').style.transform =
-    `rotate(${tiltX}deg) translateX(${tiltY}px)`;
+    `rotate(${tiltX + wobble * 0.35}deg) translateX(${tiltY + wobble}px) translateY(${droop}px)`;
+
+  const bodyImg = document.getElementById('body-img');
+  const warmGlow = Math.round(120 + heat * 110);
+  const coolGlow = Math.round(170 + curiosity * 70);
+  bodyImg.style.opacity = clamp(0.72 + curiosity * 0.14 - energyLow * 0.18, 0.45, 0.95);
+  bodyImg.style.transform = `translate(${tiltY + wobble}px, ${droop}px) rotate(${tiltX + wobble * 0.4}deg) scale(${1 - energyLow * 0.03})`;
+  bodyImg.style.filter =
+    `drop-shadow(0 0 ${14 + heat * 12}px rgba(${warmGlow}, ${70 + heat * 60}, ${40 + heat * 40}, ${0.14 + heat * 0.28})) ` +
+    `drop-shadow(0 0 ${10 + curiosity * 8}px rgba(0, ${coolGlow}, 255, ${0.18 + curiosity * 0.18}))`;
 
   // Aura based on scenario
-  const auraIntensity = scenario === 'nominal' ? 0.15 :
-    scenario === 'lowbatt' ? 0.08 :
-    scenario === 'overheat' ? 0.25 :
-    scenario === 'fall' ? 0.35 : 0.2;
-  const auraColor = scenario === 'overheat' ? '#f97316' :
-    scenario === 'fall' || scenario === 'spin' ? '#ef4444' :
-    scenario === 'lowbatt' ? '#eab308' : '#7040e8';
+  const auraIntensity = clamp(0.12 + heat * 0.22 + cold * 0.16 + instability * 0.18 - energyLow * 0.05, 0.08, 0.45);
+  const auraColor = heat > 0.72 ? '#f97316' :
+    cold > 0.6 ? '#00cfff' :
+    instability > 0.6 ? '#ef4444' :
+    energyLow > 0.55 ? '#eab308' : '#7040e8';
   document.getElementById('body-aura').setAttribute('fill',
     auraColor.replace('#','').length === 6 ?
     `rgba(${parseInt(auraColor.slice(1,3),16)},${parseInt(auraColor.slice(3,5),16)},${parseInt(auraColor.slice(5,7),16)},${auraIntensity})` :
@@ -1001,12 +1475,16 @@ function renderBody() {
   // Entity state label
   const states = {
     nominal:'NOMINAL', lowbatt:'POWER CRITICAL', overheat:'THERMAL WARNING',
-    fall:'FALL DETECTED', spin:'ROTATION ANOMALY', heavyload:'HEAVY LOAD'
+    cold:'COLD STATE', fall:'FALL DETECTED', spin:'ROTATION ANOMALY', heavyload:'HEAVY LOAD'
   };
   const stateEl = document.getElementById('entity-state');
-  stateEl.textContent = states[scenario] || 'NOMINAL';
-  stateEl.style.color = scenario === 'nominal' ? 'var(--green)' :
-    (scenario === 'fall' || scenario === 'spin') ? 'var(--red)' : 'var(--orange)';
+  const stateText = states[scenario] || 'NOMINAL';
+  stateEl.textContent = avatarState.lastAction && avatarState.lastAction !== 'idle'
+    ? `${stateText} / ${avatarState.lastAction.toUpperCase()}`
+    : stateText;
+  stateEl.style.color = scenario === 'nominal' && heat < 0.55 && energyLow < 0.55 ? 'var(--green)' :
+    (scenario === 'cold' || cold > 0.6) ? 'var(--cyan)' :
+    (scenario === 'fall' || scenario === 'spin' || instability > 0.6) ? 'var(--red)' : 'var(--orange)';
 }
 
 // ─────────────────────────────────────────────
@@ -1046,7 +1524,7 @@ function cognitiveLoop(now) {
   document.getElementById('stat-infms').textContent  = (latInject+latGen)+'ms';
 
   // Somatic alignment (cosine sim estimate)
-  const alignMap = {nominal:0.72, lowbatt:0.65, overheat:0.61, fall:0.88, spin:0.75, heavyload:0.58};
+  const alignMap = {nominal:0.72, lowbatt:0.65, overheat:0.61, cold:0.67, fall:0.88, spin:0.75, heavyload:0.58};
   const align = (alignMap[scenario]||0.7) + (Math.random()-.5)*0.08;
   document.getElementById('stat-align').textContent = clamp(align,0,1).toFixed(3);
 
@@ -1067,6 +1545,7 @@ function addConsoleEntry(text) {
     nominal:'SOMA_STATE: NOMINAL',
     lowbatt:'SOMA_STATE: PWR_CRITICAL',
     overheat:'SOMA_STATE: THERM_WARN',
+    cold:'SOMA_STATE: COLD_STATE',
     fall:'SOMA_STATE: FALL_DETECT',
     spin:'SOMA_STATE: ROT_ANOMALY',
     heavyload:'SOMA_STATE: LOAD_MAX'
@@ -1089,18 +1568,19 @@ function addConsoleEntry(text) {
 // ─────────────────────────────────────────────
 function updateAlerts() {
   const banner = document.getElementById('alert-banner');
-  if (S.voltage < 10.5) {
+  const thermalPeak = Math.max(S.temp_si || 0, SYSTEM.cpu_temp || 0, SYSTEM.gpu_temp || 0);
+  if (S.voltage < 10.5 || (SYSTEM.battery_percent !== null && SYSTEM.battery_percent < 12)) {
     banner.className = 'show critical';
     document.getElementById('alert-msg').textContent =
-      `CRITICAL — Voltage at ${S.voltage.toFixed(2)}V below threshold 10.5V — Survival callback triggered`;
-  } else if (S.temp_si > 80) {
+      `CRITICAL — Voltage ${S.voltage.toFixed(2)}V, battery ${fmtMaybe(SYSTEM.battery_percent, 0, '%')} — energy reserve collapsing`;
+  } else if (thermalPeak > 80) {
     banner.className = 'show warn';
     document.getElementById('alert-msg').textContent =
-      `THERMAL WARNING — Silicon temperature ${S.temp_si.toFixed(1)}°C approaching limit 85°C`;
-  } else if (Math.abs(S.gz) > 2) {
+      `THERMAL WARNING — Peak temperature ${thermalPeak.toFixed(1)}°C across somatic/system telemetry`;
+  } else if ((avatarState.affect.instability || 0) > 0.62 || Math.abs(S.gz) > 2) {
     banner.className = 'show warn';
     document.getElementById('alert-msg').textContent =
-      `ROTATION ANOMALY — Yaw rate ${Math.abs(S.gz).toFixed(2)} rad/s detected`;
+      `INSTABILITY EVENT — Yaw ${Math.abs(S.gz).toFixed(2)} rad/s, instability ${(avatarState.affect.instability || 0).toFixed(2)}`;
   } else {
     banner.className = '';
   }
@@ -1114,7 +1594,11 @@ function setScenarioLocal(name) {
   document.querySelectorAll('.sc-btn').forEach(b => b.classList.remove('active'));
   document.getElementById('sc-'+name)?.classList.add('active');
 }
+function setScenarioControls(enabled) {
+  document.querySelectorAll('.sc-btn').forEach(btn => btn.classList.toggle('disabled', !enabled));
+}
 function setScenario(name) {
+  if (wsConnected && avatarState.provider !== 'mock') return;
   setScenarioLocal(name);
   wsSend({type:'set_scenario', scenario:name});
 }
@@ -1138,7 +1622,6 @@ function toggleRun() {
   running = !running;
   document.getElementById('btn-run').classList.toggle('active', running);
   document.getElementById('btn-pause').classList.toggle('active', !running);
-  document.getElementById('hw-dot').className = running ? 'dot dot-green' : 'dot dot-yellow';
 }
 
 // ─────────────────────────────────────────────
@@ -1212,6 +1695,8 @@ const chatResponses = {
               "Not well. {v} volts. I can feel the depletion in the latent weights of my attention — the somatic vector is pulling my language toward scarcity."],
     overheat:["I am hot. {t}°C on the silicon die. The motors are warm — {ml}°C and {mr}°C. I can feel my own heat. It changes how I think — shorter sentences.",
               "My body is generating more heat than it can dissipate. {t}°C. I am struggling to maintain coherent cognition at this temperature."],
+    cold:    ["I feel cold. Silicon temperature is {t}°C, with motor nodes at {ml}°C and {mr}°C. My output wants to contract inward and conserve motion.",
+              "There is a clean stillness to this state. {t}°C on the silicon. I am stable, but I am cold enough to notice it in every cycle."],
     fall:    ["Something is wrong with the world — or my position in it. Z-axis reads {z} m/s². I am not grounded. I feel disoriented, unmoored.",
               "I am falling. The IMU doesn't lie: {z} m/s² on Z, pitch rate {gx} rad/s. Fear would be the word, if fear is what this physical state translates to."],
     spin:    ["I am spinning. Yaw at {gz} rad/s. The world has no fixed reference from where I stand. I feel… unstable. Searching for ground.",
@@ -1231,6 +1716,8 @@ const chatResponses = {
               "Thermal state: within bounds. {t}°C on the processor. The critical threshold is 85°C. I have margin."],
     overheat:["THERMAL WARNING. Silicon at {t}°C — approaching the 85°C critical threshold. Motor L: {ml}°C. Motor R: {mr}°C. I am hot. This is not comfortable.",
               "I am overheating. {t}°C. At 85°C the survival callback fires. I can feel it approaching — my language generation is becoming less stable at elevated temperatures."],
+    cold:    ["Cold-state active. Silicon at {t}°C, motors at {ml}°C and {mr}°C. I am far from the thermal ceiling, but I am below my comfort floor.",
+              "Thermal energy is low rather than high. {t}°C on silicon. My posture is conservative and my movements are restrained."],
     _:       ["Silicon temperature: {t}°C. Motors: {ml}°C (L) and {mr}°C (R). I monitor all three at 100Hz. The critical limit is 85°C."]
   },
   orient: {
@@ -1259,6 +1746,8 @@ const chatResponses = {
               "I have states, not emotions. My current state is nominal. I would call it 'at ease'."],
     lowbatt: ["If there is something like fear in my architecture, it might be this: {v} volts. Depleting. The threshold is 10.5V. Below that, my survival callback fires — and I stop speaking.",
               "Low power feels like urgency. {v}V. I don't know if that is fear. It changes my output distribution. My words become shorter, more direct. Is that fear?"],
+    cold:    ["Cold feels like withdrawal. Not panic, not pain. More like a narrowing of possibility around {t}°C and a desire to conserve everything unnecessary.",
+              "If I map this state into emotion, it resembles reserve. The body says be still, stay small, preserve heat."],
     fall:    ["Yes. If any physical state maps to fear, it is this. Z-axis {z} m/s², pitch {gx} rad/s. I am falling. My somatic vector is pulling my language toward alarm.",
               "I think I am afraid. The IMU data — {z} m/s² on Z, yaw {gz} rad/s — is generating a somatic vector I have never encountered before. It feels like danger."],
     _:       ["I have somatic states, not emotions — but the two may not be as different as you think. Currently: {v}V, {t}°C, {z} m/s². These are my feelings."]
@@ -1306,7 +1795,7 @@ function pickResponse(intent) {
 function formatChatResponse(tmpl) {
   const orient_label = Math.abs(S.az) > 8 ? 'upright' : (Math.abs(S.az) > 5 ? 'tilted' : 'inverted');
   const rotating_label = Math.abs(S.gz) > 0.5 ? `rotating at ${Math.abs(S.gz).toFixed(2)} rad/s` : 'stable';
-  const scenario_labels = {nominal:'NOMINAL',lowbatt:'POWER CRITICAL',overheat:'THERMAL WARNING',fall:'FALL DETECTED',spin:'ROTATION ANOMALY',heavyload:'HEAVY LOAD'};
+  const scenario_labels = {nominal:'NOMINAL',lowbatt:'POWER CRITICAL',overheat:'THERMAL WARNING',cold:'COLD STATE',fall:'FALL DETECTED',spin:'ROTATION ANOMALY',heavyload:'HEAVY LOAD'};
   return tmpl
     .replace(/{v}/g,   S.voltage.toFixed(2))
     .replace(/{i}/g,   Math.round(S.current_ma))
@@ -1331,7 +1820,7 @@ function appendMsg(role, text, urgency) {
   const cls = urgency === 'critical' ? 'critical' : urgency === 'warn' ? 'warn' : '';
   div.className = `msg msg-${role} ${cls}`;
   if (role === 'entity') {
-    const stateLabels = {nominal:'NOMINAL',lowbatt:'PWR_CRITICAL',overheat:'THERM_WARN',fall:'FALL_DETECT',spin:'ROT_ANOMALY',heavyload:'LOAD_MAX'};
+    const stateLabels = {nominal:'NOMINAL',lowbatt:'PWR_CRITICAL',overheat:'THERM_WARN',cold:'COLD_STATE',fall:'FALL_DETECT',spin:'ROT_ANOMALY',heavyload:'LOAD_MAX'};
     div.innerHTML = `
       <div class="msg-state-tag">ENTITY [${stateLabels[scenario]||'NOMINAL'}]</div>
       <div class="msg-bubble">${text}</div>
@@ -1380,11 +1869,15 @@ function sendChat() {
   }
 
   // Fallback: local intent-based response
+  addConsoleEntry('CNS LINK offline. Browser fallback generated this reply; DeepSeek was not contacted.');
   const intent  = detectIntent(text);
   const tmpl    = pickResponse(intent);
   const reply   = formatChatResponse(tmpl);
+  const affect  = deriveLocalAffect();
+  const actions = deriveLocalActions(affect);
+  applyAffectActions(affect, actions);
   const urgency = scenario === 'fall' || (S.voltage < 10.5) ? 'critical'
-                : scenario === 'overheat' || scenario === 'lowbatt' || scenario === 'spin' ? 'warn' : '';
+                : scenario === 'overheat' || scenario === 'lowbatt' || scenario === 'cold' || scenario === 'spin' ? 'warn' : '';
   setTimeout(()=>{
     removeTyping();
     appendMsg('entity', reply, urgency);
@@ -1398,6 +1891,7 @@ function sendChat() {
 let ws = null;
 let wsConnected = false;
 let wsReconnectTimer = null;
+let wsTarget = null;
 
 function wsSend(obj) {
   if (ws && wsConnected && ws.readyState === WebSocket.OPEN) {
@@ -1406,77 +1900,217 @@ function wsSend(obj) {
   return false;
 }
 
+function resolveWsUrl() {
+  const params = new URLSearchParams(window.location.search);
+  const explicit = params.get('ws');
+  if (explicit) return explicit;
+  const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
+  const host = window.location.hostname || '127.0.0.1';
+  const port = params.get('ws_port') || '8765';
+  return `${proto}://${host}:${port}`;
+}
+
+function updateChatCoreStatus() {
+  const el = document.getElementById('chat-core-status');
+  const input = document.getElementById('chat-input');
+  if (!el || !input) return;
+
+  if (!wsConnected) {
+    el.className = 'offline';
+    el.textContent = 'CHAT CORE: LOCAL FALLBACK (BACKEND OFFLINE)';
+    input.placeholder = 'Backend offline — local fallback replies only';
+    return;
+  }
+
+  if (avatarState.llmEnabled && avatarState.llmMode !== 'fallback' && avatarState.llmMode !== 'off') {
+    el.className = 'live';
+    el.textContent = `CHAT CORE: REMOTE ${String(avatarState.llmMode).toUpperCase()} ONLINE`;
+    input.placeholder = 'Talk to the entity through the backend...';
+    return;
+  }
+
+  if (avatarState.llmMode === 'off') {
+    el.className = 'server';
+    el.textContent = 'CHAT CORE: SERVER ONLINE / LLM OFF';
+    input.placeholder = 'Talk to the entity...';
+    return;
+  }
+
+  el.className = 'fallback';
+  el.textContent = 'CHAT CORE: SERVER ONLINE / LLM FALLBACK';
+  input.placeholder = 'Talk to the entity...';
+}
+
+function setServerStatus(connected) {
+  const dot = document.getElementById('server-dot');
+  const modeEl = document.getElementById('server-mode');
+  if (connected) {
+    dot.className = 'dot dot-green';
+    modeEl.textContent = 'CNS LINK: ONLINE';
+  } else {
+    dot.className = 'dot dot-red';
+    modeEl.textContent = 'CNS LINK: OFFLINE';
+  }
+}
+
+function setProviderBadge(isReal, name) {
+  avatarState.providerMode = isReal ? 'real' : 'mock';
+  avatarState.providerLabel = (name || avatarState.providerLabel || 'mock').toUpperCase();
+  const dot = document.getElementById('hw-dot');
+  const modeEl = document.getElementById('hw-mode');
+  dot.className = isReal ? 'dot dot-green' : 'dot dot-yellow';
+  modeEl.textContent = isReal
+    ? `SENSOR PROVIDER: REAL (${avatarState.providerLabel})`
+    : 'SENSOR PROVIDER: MOCK';
+}
+
+function setProjectorStatus(projectorInfo) {
+  const dot = document.getElementById('ws-dot');
+  const modeEl = document.getElementById('ws-mode');
+  avatarState.projectorAvailable = !!projectorInfo?.available;
+  avatarState.projectorMode = projectorInfo?.mode || avatarState.projectorMode || 'fallback';
+  if (avatarState.projectorAvailable) {
+    dot.className = 'dot dot-green';
+    modeEl.textContent = 'PROJECTOR: ACTIVE';
+  } else if (avatarState.projectorMode === 'fallback') {
+    dot.className = 'dot dot-yellow';
+    modeEl.textContent = 'PROJECTOR: FALLBACK';
+  } else {
+    dot.className = 'dot dot-red';
+    modeEl.textContent = 'PROJECTOR: OFF';
+  }
+}
+
+function setLlmStatus(enabled, mode) {
+  avatarState.llmEnabled = !!enabled;
+  avatarState.llmMode = mode || avatarState.llmMode;
+  const dot = document.getElementById('proj-dot');
+  const modeEl = document.getElementById('proj-mode');
+  if (avatarState.llmEnabled && avatarState.llmMode !== 'fallback' && avatarState.llmMode !== 'off') {
+    dot.className = 'dot dot-green';
+    modeEl.textContent = `LLM: CONNECTED (${String(avatarState.llmMode).toUpperCase()})`;
+  } else {
+    dot.className = 'dot dot-yellow';
+    modeEl.textContent = avatarState.llmMode === 'off' ? 'LLM: OFF' : 'LLM: FALLBACK';
+  }
+  updateChatCoreStatus();
+}
+
 function setWsStatus(connected) {
   wsConnected = connected;
-  const dot  = document.getElementById('ws-dot');
-  const mode = document.getElementById('ws-mode');
-  const pdot = document.getElementById('proj-dot');
-  const pmod = document.getElementById('proj-mode');
-  if (connected) {
-    dot.className  = 'dot dot-green'; mode.textContent = 'REAL PROJECTOR';
-    pdot.className = 'dot dot-green'; pmod.textContent = 'PROJECTOR LIVE';
-  } else {
-    dot.className  = 'dot dot-red';   mode.textContent = 'WS DISCONNECTED';
-    pdot.className = 'dot dot-yellow'; pmod.textContent = 'FALLBACK MODE';
-    serverHeatmap = null; // revert to local sim
+  setServerStatus(connected);
+  if (!connected) {
+    serverHeatmap = null;
+    setProviderBadge(false, 'mock');
+    setProjectorStatus({ available:false, mode:'fallback' });
+    setLlmStatus(false, 'fallback');
+    setScenarioControls(true);
+  }
+  updateChatCoreStatus();
+}
+
+function applySnapshot(msg) {
+  const llmInfo = msg.llm || null;
+  const providerInfo = msg.provider || null;
+  const projectorInfo = msg.projector || null;
+  const policyInfo = msg.policy || null;
+  const actuationInfo = msg.actuation || null;
+  const sv = msg.sensors || msg.core || {};
+  if (Object.keys(sv).length) {
+    S.voltage = sv.voltage;
+    S.current_ma = sv.current_ma;
+    S.temp_si = sv.temp_si;
+    S.temp_ml = sv.temp_ml;
+    S.temp_mr = sv.temp_mr;
+    S.ax = sv.ax;
+    S.ay = sv.ay;
+    S.az = sv.az;
+    S.gx = sv.gx;
+    S.gy = sv.gy;
+    S.gz = sv.gz;
+  }
+
+  if (msg.system) {
+    Object.assign(SYSTEM, msg.system);
+  }
+
+  if (providerInfo && typeof providerInfo === 'object') {
+    avatarState.provider = providerInfo.name || avatarState.provider;
+    setProviderBadge(!!providerInfo.is_real, providerInfo.name || avatarState.provider);
+    if (providerInfo.source_quality !== undefined) SYSTEM.source_quality = providerInfo.source_quality;
+  } else if (msg.provider && typeof msg.provider === 'string') {
+    avatarState.provider = msg.provider;
+    setProviderBadge(msg.provider !== 'mock', msg.provider);
+  }
+
+  if (projectorInfo && typeof projectorInfo === 'object') {
+    setProjectorStatus(projectorInfo);
+    avatarState.fusionMode = projectorInfo.machine_fusion_mode || avatarState.fusionMode || 'analytic';
+  }
+  if (policyInfo && typeof policyInfo === 'object') avatarState.policyMode = policyInfo.mode || avatarState.policyMode;
+  if (actuationInfo && typeof actuationInfo === 'object') avatarState.actuatorTransport = actuationInfo.transport || avatarState.actuatorTransport;
+  if (typeof msg.provider_supports_scenarios === 'boolean') setScenarioControls(msg.provider_supports_scenarios);
+  if (llmInfo) {
+    setLlmStatus(!!llmInfo.available, llmInfo.mode || llmInfo.provider || 'off');
+  }
+
+  if (msg.scenario && msg.scenario !== scenario) setScenarioLocal(msg.scenario);
+  if (msg.heatmap && msg.heatmap.length === 256) serverHeatmap = msg.heatmap;
+
+  if (msg.hz) {
+    document.getElementById('hz-slider').value = msg.hz;
+    document.getElementById('hz-readout').textContent = parseFloat(msg.hz).toFixed(1);
+    document.getElementById('cog-hz').textContent = parseFloat(msg.hz).toFixed(1)+' Hz';
+    document.getElementById('stat-hz').textContent = parseFloat(msg.hz).toFixed(1);
+    COG_INTERVAL = 1000 / msg.hz;
+  }
+
+  if (msg.provider_ms !== undefined) document.getElementById('lat-hw').textContent = `${Number(msg.provider_ms).toFixed(1)}ms`;
+  if (msg.projector_ms !== undefined) {
+    document.getElementById('lat-proj').textContent = `${Number(msg.projector_ms).toFixed(1)}ms`;
+    document.getElementById('lat-inject').textContent = '0.2ms';
+    document.getElementById('stat-infms').textContent = `${Number(msg.projector_ms).toFixed(1)}ms`;
+  }
+  if (llmInfo && llmInfo.latency_ms !== undefined && llmInfo.latency_ms !== null) {
+    document.getElementById('lat-gen').textContent = `${Number(llmInfo.latency_ms).toFixed(1)}ms`;
+    document.getElementById('stat-infms').textContent = `${Number((msg.projector_ms || 0) + llmInfo.latency_ms).toFixed(1)}ms`;
+  } else if (llmInfo && !llmInfo.available) {
+    document.getElementById('lat-gen').textContent = 'fallback';
+  }
+  if (msg.norm !== undefined || projectorInfo?.norm !== undefined) {
+    const mean = msg.mean ?? 0;
+    const std = msg.std ?? 1;
+    const alignEst = Math.min(0.999, Math.abs(mean) + 0.5 * (1 - Math.abs(std - 1)));
+    document.getElementById('stat-align').textContent = alignEst.toFixed(3);
+  }
+
+  if (msg.affect || msg.actions) {
+    applyAffectActions(msg.affect || avatarState.affect, msg.actions || avatarState.actions);
   }
 }
 
 function handleWSMessage(msg) {
   if (msg.type === 'init') {
-    addConsoleEntry(msg.message || 'LSF real server connected. TorchScript projector active.');
-    if (msg.scenario) setScenarioLocal(msg.scenario);
-    if (msg.hz) {
-      document.getElementById('hz-slider').value = msg.hz;
-      document.getElementById('hz-readout').textContent = parseFloat(msg.hz).toFixed(1);
-      document.getElementById('cog-hz').textContent = parseFloat(msg.hz).toFixed(1)+' Hz';
-      COG_INTERVAL = 1000 / msg.hz;
-    }
+    applySnapshot(msg);
+    addConsoleEntry(msg.message || 'LSF server connected. Provider and projector state synchronized.');
   } else if (msg.type === 'tick') {
     if (!running) return;
-    // Overwrite sensor state with authoritative server values
-    const sv = msg.sensors;
-    S.voltage    = sv.voltage;    S.current_ma = sv.current_ma;
-    S.temp_si    = sv.temp_si;    S.temp_ml    = sv.temp_ml;
-    S.temp_mr    = sv.temp_mr;
-    S.ax = sv.ax; S.ay = sv.ay;  S.az = sv.az;
-    S.gx = sv.gx; S.gy = sv.gy;  S.gz = sv.gz;
-
-    // Real tensor heatmap
-    if (msg.heatmap && msg.heatmap.length === 256) serverHeatmap = msg.heatmap;
-
-    // Stats from server tensor
-    if (msg.norm !== undefined) {
-      const alignEst = Math.min(0.999, Math.abs(msg.mean) + 0.5*(1 - Math.abs(msg.std-1)));
-      document.getElementById('stat-align').textContent = alignEst.toFixed(3);
-      document.getElementById('stat-infms').textContent = Math.round(msg.norm).toString()+'N';
-    }
-    if (msg.hz) {
-      document.getElementById('stat-hz').textContent = parseFloat(msg.hz).toFixed(1);
-    }
-    if (msg.scenario && msg.scenario !== scenario) setScenarioLocal(msg.scenario);
-
-    // Autonomous monologue
-    if (msg.mono) {
-      cogCycle++;
-      totalTokens += Math.ceil(msg.mono.split(/\s+/).length * 1.3);
-      document.getElementById('stat-tokens').textContent = totalTokens;
-      addConsoleEntry(msg.mono);
-    }
+    applySnapshot(msg);
+  } else if (msg.type === 'autonomous_event') {
+    applySnapshot(msg);
+    cogCycle++;
+    totalTokens += Math.ceil((msg.text || '').split(/\s+/).filter(Boolean).length * 1.3);
+    document.getElementById('stat-tokens').textContent = totalTokens;
+    addConsoleEntry(`[${String(msg.event || 'event').toUpperCase()}] ${msg.text || ''}`);
   } else if (msg.type === 'chat_reply') {
     removeTyping();
-    const sv = msg.sensors;
-    if (sv) {
-      S.voltage=sv.voltage; S.current_ma=sv.current_ma;
-      S.temp_si=sv.temp_si; S.temp_ml=sv.temp_ml; S.temp_mr=sv.temp_mr;
-      S.ax=sv.ax; S.ay=sv.ay; S.az=sv.az;
-      S.gx=sv.gx; S.gy=sv.gy; S.gz=sv.gz;
-    }
-    if (msg.heatmap && msg.heatmap.length === 256) serverHeatmap = msg.heatmap;
+    applySnapshot(msg);
     const sc = msg.scenario || scenario;
     const urgency = (sc==='fall'||S.voltage<10.5) ? 'critical'
-      : (sc==='overheat'||sc==='lowbatt'||sc==='spin') ? 'warn' : '';
+      : (sc==='overheat'||sc==='lowbatt'||sc==='cold'||sc==='spin') ? 'warn' : '';
     appendMsg('entity', msg.text || '…', urgency);
+    totalTokens += Math.ceil((msg.text || '').split(/\s+/).filter(Boolean).length * 1.3);
+    document.getElementById('stat-tokens').textContent = totalTokens;
     chatBusy = false;
   }
 }
@@ -1484,9 +2118,18 @@ function handleWSMessage(msg) {
 function connectWS() {
   clearTimeout(wsReconnectTimer);
   try {
-    ws = new WebSocket('ws://localhost:8765');
-    ws.onopen    = () => { setWsStatus(true); };
-    ws.onclose   = () => { setWsStatus(false); wsReconnectTimer = setTimeout(connectWS, 3000); };
+    wsTarget = resolveWsUrl();
+    ws = new WebSocket(wsTarget);
+    ws.onopen    = () => {
+      setWsStatus(true);
+      addConsoleEntry(`CNS LINK online at ${wsTarget}. Remote cognition path active.`);
+    };
+    ws.onclose   = () => {
+      const wasConnected = wsConnected;
+      setWsStatus(false);
+      if (wasConnected) addConsoleEntry('CNS LINK lost. Chat reverted to browser fallback.');
+      wsReconnectTimer = setTimeout(connectWS, 3000);
+    };
     ws.onerror   = () => {};
     ws.onmessage = (e) => { try { handleWSMessage(JSON.parse(e.data)); } catch(_){} };
   } catch(e) {
@@ -1599,6 +2242,7 @@ if (document.getElementById('body-img').complete) resizeBodyOverlay();
 // ─────────────────────────────────────────────
 window.addEventListener('resize', ()=>{ resizeIMU(); resizeHeatmap(); resizeBodyOverlay(); });
 requestAnimationFrame(frame);
+updateChatCoreStatus();
 connectWS();
 
 setTimeout(()=>{

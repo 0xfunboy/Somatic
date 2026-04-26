@@ -30,6 +30,26 @@ An open-hardware, open-source research platform that enables a Large Language Mo
 
 Physical variables alter the LLM's attention mechanism at the embedding level, bypassing the tokenizer entirely. The architecture is aligned with the VLA/sensor-aware LLM research emerging in 2024–2025 (LLaSA, OmniVLA, SensorLLM).
 
+## Current Status
+
+What is real today:
+
+- the C++ latent-somatic bridge and embedding-injection direction
+- the LibTorch/TorchScript somatic projector path
+- browser WebSocket runtime
+- provider abstraction for `mock`, `linux`, and `endpoint`
+- real Linux machine telemetry where available
+- structured `speech + affect + actions` payloads
+
+What is still prototype:
+
+- Python orchestration layer as the runtime glue
+- endpoint-based LLM chat (`openai_compatible` / `deepseek`)
+- 2D avatar presentation instead of a 3D humanoid/VRM
+- browser-side avatar styling instead of a full action/animation engine
+
+The Python runtime is a validation layer for UX, telemetry, and protocol. The long-term runtime target remains the C++ path in `src/` plus `/home/funboy/llama.cpp`.
+
 ## Architecture
 
 | Layer | Thread | Rate | Technology | Role |
@@ -54,10 +74,10 @@ Physical variables alter the LLM's attention mechanism at the embedding level, b
 ## Quick Start
 
 ```bash
-# 1. Build llama.cpp
-git clone https://github.com/ggml-org/llama.cpp
-cmake -S llama.cpp -B llama.cpp/build -DGGML_CUDA=OFF
-cmake --build llama.cpp/build -j$(nproc)
+# 1. Reuse the existing llama.cpp checkout on this machine
+LLAMA_CPP_ROOT=/home/funboy/llama.cpp
+cmake -S "$LLAMA_CPP_ROOT" -B "$LLAMA_CPP_ROOT/build" -DGGML_CUDA=OFF
+cmake --build "$LLAMA_CPP_ROOT/build" -j$(nproc)
 
 # 2. Python environment
 pip install torch sentence-transformers websockets pillow \
@@ -66,19 +86,76 @@ pip install torch sentence-transformers websockets pillow \
 # 3. Train somatic projector
 python train/train_projector.py --epochs 200 --output weights/somatic_projector.pt
 
+# 3b. Distill learned machine-fusion adapter
+python train/train_machine_fusion.py --output weights/machine_fusion.pt
+
 # 4. Build C++ binary
 cmake -S . -B build \
   -DTORCH_DIR=$(python3 -c 'import torch; print(torch.utils.cmake_prefix_path)') \
-  -DLLAMA_DIR=../llama.cpp
+  -DLLAMA_DIR="$LLAMA_CPP_ROOT"
 cmake --build build -j$(nproc)
 
-# 5. Launch production stack (WebSocket server + real projector)
+# 5. Launch production stack (Linux telemetry + WebSocket + frontend server)
+DEEPSEEK_API_KEY=... \
+DEEPSEEK_API_URL=http://127.0.0.1:4000 \
+MEDIUM_DEEPSEEK_MODEL=gemini-web \
+bash scripts/run_production.sh
+# → http://127.0.0.1:8080/simulator.html?ws_port=8765
+```
+
+## Runtime Modes
+
+```bash
+# Mock provider, no external LLM
+SOMA_SENSOR_PROVIDER=mock \
+SOMA_LLM_MODE=off \
 python3 server.py
 
-# 6. Open the interface
-cd docs && python3 -m http.server 8080
-# → http://localhost:8080/simulator.html
+# Real Linux telemetry, no external LLM
+SOMA_SENSOR_PROVIDER=linux \
+SOMA_LLM_MODE=off \
+python3 server.py
+
+# OpenAI-compatible endpoint
+SOMA_SENSOR_PROVIDER=linux \
+SOMA_LLM_MODE=openai_compatible \
+SOMA_LLM_ENDPOINT=http://127.0.0.1:8081/v1/chat/completions \
+SOMA_LLM_MODEL=local \
+python3 server.py
+
+# DeepSeek endpoint
+SOMA_SENSOR_PROVIDER=linux \
+SOMA_LLM_MODE=deepseek \
+SOMA_DEEPSEEK_API_KEY=your_key \
+SOMA_DEEPSEEK_MODEL=deepseek-v4-flash \
+python3 server.py
 ```
+
+`SOMA_LLM_MODE=deepseek` targets DeepSeek's chat completions API, while `openai_compatible` remains the generic path for local or hosted OpenAI-style endpoints.
+
+For local proxy setups, `server.py` also accepts the alias variables `OPENAI_API_URL`, `OPENAI_API_KEY`, `DEEPSEEK_API_URL`, and `DEEPSEEK_API_KEY`. Base URLs such as `http://127.0.0.1:4000` or `http://127.0.0.1:4000/v1` are expanded automatically to the correct chat-completions path.
+
+The runtime now loads `weights/machine_fusion.pt` when present and uses it as the primary learned machine-to-latent fusion path, with analytic fusion retained only as a fallback.
+
+Runtime memory and backend actuation state are persisted under `data/` and intentionally ignored by git:
+
+- `data/memory/semantic_memory.json`
+- `data/memory/episodic_memory.jsonl`
+- `data/memory/consolidated_memory.json`
+- `data/runtime/actuation_state.json`
+- `data/runtime/actuation_history.jsonl`
+
+The current Python orchestrator is still a prototype layer. The active implementation backlog now lives in [docs/DEVELOPMENT_TODO.md](docs/DEVELOPMENT_TODO.md).
+
+On this machine there is already a local `llama.cpp` checkout at `/home/funboy/llama.cpp`; use that path for integration work instead of cloning another copy.
+
+## Documentation
+
+- [Architecture](docs/ARCHITECTURE.md)
+- [Runtime Modes](docs/RUNTIME_MODES.md)
+- [WebSocket Protocol](docs/WEBSOCKET_PROTOCOL.md)
+- [Sensor Providers](docs/SENSOR_PROVIDERS.md)
+- [Development Todo](docs/DEVELOPMENT_TODO.md)
 
 ## Repository Layout
 
@@ -91,14 +168,19 @@ latent-somatic/
 │   └── llm_bridge.cpp        ← llama_batch.embd injection into KV cache
 ├── include/                  ← C++ headers
 ├── train/
-│   └── train_projector.py    ← InfoNCE contrastive training (CLIP-style)
+│   ├── train_projector.py    ← InfoNCE contrastive training (CLIP-style)
+│   └── train_machine_fusion.py ← learned machine-fusion distillation
 ├── weights/
 │   ├── somatic_projector.pt  ← TorchScript (torch::jit::load in C++)
+│   ├── machine_fusion.pt     ← learned machine-to-latent fusion module
 │   └── somatic_projector_adapter.pth
 ├── server.py                 ← WebSocket production server (real tensors)
+├── data/                     ← persistent memory + backend actuation state
 ├── docs/
 │   ├── index.html            ← technical documentation
 │   └── simulator.html        ← interactive entity body + live chat
+├── scripts/
+│   └── run_production.sh     ← launches backend + frontend together
 └── CMakeLists.txt
 ```
 
