@@ -1,0 +1,12 @@
+{
+  "confirmed_capabilities": [],
+  "confirmed_unavailable": [],
+  "bash_shortcuts": [
+    {
+      "intent_pattern": "speedtest|bandwidth_test|network_speed",
+      "cmd": "curl -s -o /dev/null -w '%{speed_download}' --max-time 15 https://speed.cloudflare.com/__down?bytes=20000000 | awk '{printf \"%.2f Mbps\\n\", $1/131072}'",
+      "source": "direct_shortcut"
+    }
+  ],
+  "updated_at": 0
+}

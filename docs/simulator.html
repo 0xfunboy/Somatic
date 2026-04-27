@@ -78,6 +78,8 @@ a.tb-link{text-decoration:none}
 .sys-kv-label{font-size:9px;color:var(--text3);letter-spacing:.08em;text-transform:uppercase}
 .sys-kv-value{font-size:11px;color:var(--text);margin-top:3px}
 .sys-meta{margin-top:8px;font-size:9px;color:var(--text3);line-height:1.5}
+.sys-section{margin-top:12px;border-top:1px solid var(--border);padding-top:10px;display:flex;flex-direction:column;gap:6px}
+.sys-section-title{font-size:9px;color:var(--cyan);letter-spacing:.12em;text-transform:uppercase;margin-bottom:2px}
 
 /* IMU visualizer */
 #imu-canvas{width:100%;height:130px;display:block}
@@ -520,6 +522,39 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
           </div>
         </div>
         <div class="sys-meta" id="sys-meta">CPU/GPU metrics appear when the provider has access to real machine telemetry.</div>
+      </div>
+
+      <!-- Mind State section -->
+      <div class="sys-section" id="mind-section">
+        <div class="sys-section-title">Volition</div>
+        <div class="sys-kv">
+          <div class="sys-kv-label">Active Goal</div>
+          <div class="sys-kv-value" id="mind-goal-title">--</div>
+        </div>
+        <div class="sys-kv">
+          <div class="sys-kv-label">Goal Progress</div>
+          <div class="sys-kv-value" id="mind-goal-progress">--</div>
+        </div>
+        <div class="sys-kv">
+          <div class="sys-kv-label">Dominant Drive</div>
+          <div class="sys-kv-value" id="mind-drive">--</div>
+        </div>
+        <div class="sys-kv">
+          <div class="sys-kv-label">Policy</div>
+          <div class="sys-kv-value" id="mind-policy">--</div>
+        </div>
+        <div class="sys-kv">
+          <div class="sys-kv-label">Reflection</div>
+          <div class="sys-kv-value" id="mind-reflection">--</div>
+        </div>
+        <div class="sys-kv">
+          <div class="sys-kv-label">Last Learned</div>
+          <div class="sys-kv-value" id="mind-learned" style="font-size:9px;line-height:1.3">--</div>
+        </div>
+        <div class="sys-kv">
+          <div class="sys-kv-label">LLM / Volition</div>
+          <div class="sys-kv-value" id="mind-flags">--</div>
+        </div>
       </div>
 
     </div>
@@ -1309,6 +1344,37 @@ function renderSystemTelemetry() {
     `Disk ${fmtMaybe(SYSTEM.disk_temp, 1, 'C')} / R${fmtMaybe(SYSTEM.disk_read_mb_s, 1, 'MB/s')} / W${fmtMaybe(SYSTEM.disk_write_mb_s, 1, 'MB/s')} | ` +
     `Fans ${fmtMaybe(SYSTEM.fan_rpm, 0, 'rpm')} | AC ${truthyBoolLabel(SYSTEM.ac_online)}`;
   applyCapsToBars();
+  renderMindState();
+}
+
+function renderMindState() {
+  const mind = window._MIND || {};
+  const goalTitle = mind.active_goal_title || '--';
+  const goalProgress = (mind.active_goal_progress !== undefined && mind.active_goal_progress !== null)
+    ? `${Math.round(mind.active_goal_progress * 100)}%` : '--';
+  const drive = mind.dominant_drive
+    ? `${mind.dominant_drive} (${(mind.dominant_drive_intensity || 0).toFixed(2)})`
+    : '--';
+  const policy = mind.policy_mode ? String(mind.policy_mode).toUpperCase() : '--';
+
+  let reflectionStr = '--';
+  if (mind.last_reflection_at && mind.last_reflection_at > 0) {
+    const age = Math.round((Date.now() / 1000) - mind.last_reflection_at);
+    const trigger = mind.last_reflection_trigger || '';
+    reflectionStr = `${age}s ago · ${trigger.replace(':', ': ')}`;
+  }
+
+  const learned = mind.last_learned || '--';
+  const llmFlag = mind.llm_live ? '🟢 LLM LIVE' : '🟡 FALLBACK';
+  const volFlag = mind.volition_enabled ? 'VOL ON' : 'VOL OFF';
+
+  document.getElementById('mind-goal-title').textContent = goalTitle;
+  document.getElementById('mind-goal-progress').textContent = goalProgress;
+  document.getElementById('mind-drive').textContent = drive;
+  document.getElementById('mind-policy').textContent = policy;
+  document.getElementById('mind-reflection').textContent = reflectionStr;
+  document.getElementById('mind-learned').textContent = learned;
+  document.getElementById('mind-flags').textContent = `${llmFlag} · ${volFlag}`;
 }
 
 // ─────────────────────────────────────────────
@@ -2256,6 +2322,9 @@ function applySnapshot(msg) {
   if (msg.telemetry_caps && typeof msg.telemetry_caps === 'object') Object.assign(telemetryCaps, msg.telemetry_caps);
   if (msg.user_caps_count !== undefined) {
     document.getElementById('stat-caps').textContent = msg.user_caps_count || 0;
+  }
+  if (msg.mind && typeof msg.mind === 'object') {
+    window._MIND = msg.mind;
   }
 
   if (msg.hz) {

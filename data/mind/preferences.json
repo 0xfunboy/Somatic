@@ -1,0 +1,14 @@
+{
+  "operator": {
+    "language": "auto",
+    "verbosity": "concise",
+    "topics_of_interest": [],
+    "last_interaction_at": 0
+  },
+  "interaction": {
+    "prefers_real_data": true,
+    "tolerates_uncertainty": true,
+    "dislikes_fake_telemetry": true
+  },
+  "updated_at": 0
+}

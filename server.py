@@ -35,6 +35,10 @@ from sensor_providers.discoverer import (
     SelfModifier,
     ShellExecutor,
 )
+from soma_core.goals import GoalStore
+from soma_core.memory import SomaMemory
+from soma_core.reflection import ReflectionEngine
+from soma_core.mind import SomaMind
 
 WS_HOST = "0.0.0.0"
 WS_PORT = 8765
@@ -454,6 +458,12 @@ def _normalize_intent(user_text: str) -> str:
 
 
 _user_caps_count: int = len(_load_user_caps())
+
+# ── Volitional Soma Core ──────────────────────────────────────────────────────
+_soma_memory = SomaMemory()
+_goal_store = GoalStore()
+_reflection_engine = ReflectionEngine(_soma_memory, _goal_store)
+_soma_mind = SomaMind(_goal_store, _soma_memory, _reflection_engine)
 
 # Serializes all internal LLM calls (discovery + capability checks) so they
 # don't compete when the backend LLM is single-threaded (local proxy / ollama).
@@ -1598,6 +1608,8 @@ def build_llm_context(snapshot: dict[str, Any], user_text: str) -> dict[str, Any
             "hw_pending": [f for f, v in _hw_discovery.get_caps().items() if v is None],
             "total_user_caps": _user_caps_count,
         },
+        "self": _soma_memory.context_for_llm(),
+        "goals": _goal_store.summary_for_llm(),
     }
 
 
@@ -2027,6 +2039,7 @@ def build_snapshot() -> dict[str, Any]:
     apply_autonomic_rate(snapshot["policy"])
     snapshot["actuation"] = build_actuation_state(snapshot, snapshot["policy"])
     dispatch_actuation(snapshot)
+    snapshot["mind"] = _soma_mind.tick(snapshot)
     runtime["last_snapshot"] = snapshot
     remember_somatic_trace(snapshot)
     consolidate_memory(snapshot)
@@ -2087,6 +2100,7 @@ def public_payload(snapshot: dict[str, Any], *, llm_override: dict[str, Any] | N
         "seg_energy": snapshot["tensor"]["seg_energy"],
         "telemetry_caps": _hw_discovery.get_caps(),
         "user_caps_count": _user_caps_count,
+        "mind": snapshot.get("mind", {}),
     }
 
 
@@ -2671,6 +2685,8 @@ async def main():
 
     async with websockets.serve(handler, args.host, args.port):
         print("[LSF] Server READY - open docs/simulator.html in browser")
+        print(f"[LSF] Volitional Soma Core: active | goals={len(_goal_store.active_goals())} | "
+              f"reflections={_soma_memory.get_growth().get('total_reflections', 0)}")
         tick_task = asyncio.create_task(tick_loop())
         disc_task = asyncio.create_task(hardware_discovery_loop()) if DISCOVERY_ENABLED else None
         print(f"[LSF] Hardware discovery: {'enabled' if DISCOVERY_ENABLED else 'disabled'} "

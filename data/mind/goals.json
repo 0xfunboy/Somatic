@@ -1,0 +1,80 @@
+{
+  "active_goals": [
+    {
+      "id": "maintain_stability",
+      "title": "Maintain somatic stability",
+      "drive": "homeostasis",
+      "priority": 0.9,
+      "status": "active",
+      "progress": 0.01,
+      "created_at": 0,
+      "updated_at": 1777285842.444303,
+      "next_action": "observe",
+      "evidence": [
+        "Stability margin 0.92, thermal margin 0.88"
+      ]
+    },
+    {
+      "id": "understand_own_body",
+      "title": "Understand my thermal and resource profile",
+      "drive": "self_knowledge",
+      "priority": 0.75,
+      "status": "active",
+      "progress": 0.0,
+      "created_at": 0,
+      "updated_at": 0,
+      "next_action": "observe",
+      "evidence": []
+    },
+    {
+      "id": "improve_dialogue",
+      "title": "Improve quality of dialogue with operator",
+      "drive": "social",
+      "priority": 0.6,
+      "status": "active",
+      "progress": 0.0,
+      "created_at": 0,
+      "updated_at": 0,
+      "next_action": "observe",
+      "evidence": []
+    },
+    {
+      "id": "reduce_false_claims",
+      "title": "Never report data I do not actually measure",
+      "drive": "integrity",
+      "priority": 0.8,
+      "status": "active",
+      "progress": 0.0,
+      "created_at": 0,
+      "updated_at": 0,
+      "next_action": "observe",
+      "evidence": []
+    },
+    {
+      "id": "learn_environment_patterns",
+      "title": "Learn recurring patterns in my environment and workload",
+      "drive": "self_knowledge",
+      "priority": 0.55,
+      "status": "active",
+      "progress": 0.0,
+      "created_at": 0,
+      "updated_at": 0,
+      "next_action": "observe",
+      "evidence": []
+    },
+    {
+      "id": "develop_avatar_expressiveness",
+      "title": "Develop richer avatar expression for body states",
+      "drive": "expression",
+      "priority": 0.4,
+      "status": "active",
+      "progress": 0.0,
+      "created_at": 0,
+      "updated_at": 0,
+      "next_action": "observe",
+      "evidence": []
+    }
+  ],
+  "completed_goals": [],
+  "updated_at": 1777285842.4443035
+}
