@@ -4,39 +4,70 @@
       "id": "maintain_stability",
       "title": "Maintain somatic stability",
       "drive": "homeostasis",
-      "priority": 0.9,
+      "priority": 1.0,
       "status": "active",
-      "progress": 0.01,
+      "progress": 0.5600000000000003,
       "created_at": 0,
-      "updated_at": 1777285842.444303,
+      "updated_at": 1777312713.6377213,
       "next_action": "observe",
       "evidence": [
-        "Stability margin 0.92, thermal margin 0.88"
+        "Stability margin 1.00, thermal margin 0.92",
+        "Stability margin 1.00, thermal margin 0.92",
+        "Stability margin 1.00, thermal margin 0.92",
+        "Stability margin 1.00, thermal margin 0.92",
+        "Stability margin 1.00, thermal margin 0.92",
+        "Stability margin 1.00, thermal margin 0.92",
+        "Stability margin 1.00, thermal margin 0.92",
+        "Stability margin 1.00, thermal margin 0.92",
+        "Stability margin 1.00, thermal margin 0.92",
+        "Stability margin 1.00, thermal margin 0.92",
+        "Stability margin 1.00, thermal margin 0.92",
+        "Stability margin 1.00, thermal margin 0.92",
+        "Stability margin 1.00, thermal margin 0.92",
+        "Stability margin 1.00, thermal margin 0.92",
+        "Stability margin 1.00, thermal margin 0.92",
+        "Stability margin 1.00, thermal margin 0.92",
+        "Stability margin 1.00, thermal margin 0.92",
+        "Stability margin 1.00, thermal margin 0.92",
+        "Stability margin 1.00, thermal margin 0.92",
+        "Stability margin 1.00, thermal margin 0.92"
       ]
     },
     {
       "id": "understand_own_body",
       "title": "Understand my thermal and resource profile",
       "drive": "self_knowledge",
-      "priority": 0.75,
+      "priority": 1.0,
       "status": "active",
-      "progress": 0.0,
+      "progress": 0.39999999999999997,
       "created_at": 0,
-      "updated_at": 0,
+      "updated_at": 1777311152.084835,
       "next_action": "observe",
-      "evidence": []
+      "evidence": [
+        "New sensor baseline computed: ['cpu_temp_baseline']",
+        "New sensor baseline computed: ['cpu_temp_baseline']",
+        "New sensor baseline computed: ['cpu_temp_baseline']",
+        "New sensor baseline computed: ['cpu_temp_baseline']",
+        "New sensor baseline computed: ['cpu_temp_baseline']",
+        "New sensor baseline computed: ['cpu_temp_baseline']",
+        "New sensor baseline computed: ['cpu_temp_baseline']",
+        "New sensor baseline computed: ['cpu_temp_baseline']"
+      ]
     },
     {
       "id": "improve_dialogue",
       "title": "Improve quality of dialogue with operator",
       "drive": "social",
-      "priority": 0.6,
+      "priority": 0.623,
       "status": "active",
-      "progress": 0.0,
+      "progress": 0.02,
       "created_at": 0,
-      "updated_at": 0,
+      "updated_at": 1777310592.0939612,
       "next_action": "observe",
-      "evidence": []
+      "evidence": [
+        "User: can you make a speed test on the data connection ? not the bandwith or the usage, a single speed max",
+        "User: speed test the connection please"
+      ]
     },
     {
       "id": "reduce_false_claims",
@@ -54,7 +85,7 @@
       "id": "learn_environment_patterns",
       "title": "Learn recurring patterns in my environment and workload",
       "drive": "self_knowledge",
-      "priority": 0.55,
+      "priority": 1.0,
       "status": "active",
       "progress": 0.0,
       "created_at": 0,
@@ -73,8 +104,20 @@
       "updated_at": 0,
       "next_action": "observe",
       "evidence": []
+    },
+    {
+      "id": "prepare_cpp_embodied_runtime",
+      "title": "Prepare C++ embodied runtime (protocol stability)",
+      "drive": "self_knowledge",
+      "priority": 1.0,
+      "status": "active",
+      "progress": 0.0,
+      "created_at": 1777302696.278943,
+      "updated_at": 1777302696.278943,
+      "next_action": "observe",
+      "evidence": []
     }
   ],
   "completed_goals": [],
-  "updated_at": 1777285842.4443035
+  "updated_at": 1777312721.873624
 }

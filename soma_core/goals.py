@@ -40,12 +40,13 @@ class GoalStore:
     # ── built-in goals ────────────────────────────────────────────────────────
 
     _BUILTIN: list[dict[str, Any]] = [
-        {"id": "maintain_stability",         "title": "Maintain somatic stability",                         "drive": "homeostasis",   "priority": 0.90},
-        {"id": "understand_own_body",        "title": "Understand my thermal and resource profile",         "drive": "self_knowledge","priority": 0.75},
-        {"id": "reduce_false_claims",        "title": "Never report data I do not actually measure",        "drive": "integrity",     "priority": 0.80},
-        {"id": "improve_dialogue",           "title": "Improve quality of dialogue with operator",          "drive": "social",        "priority": 0.60},
-        {"id": "learn_environment_patterns", "title": "Learn recurring patterns in my environment",         "drive": "self_knowledge","priority": 0.55},
-        {"id": "develop_avatar_expressiveness", "title": "Develop richer avatar expression",                "drive": "expression",    "priority": 0.40},
+        {"id": "maintain_stability",            "title": "Maintain internal stability",                          "drive": "self_preservation", "priority": 0.90},
+        {"id": "understand_own_body",           "title": "Understand my machine body",                           "drive": "self_knowledge",    "priority": 0.75},
+        {"id": "reduce_false_claims",           "title": "Reduce false claims and reflex-as-cognition",          "drive": "caution",           "priority": 0.80},
+        {"id": "improve_dialogue",              "title": "Improve dialogue with the operator",                   "drive": "social_contact",    "priority": 0.60},
+        {"id": "learn_environment_patterns",    "title": "Learn environment patterns",                           "drive": "curiosity",         "priority": 0.55},
+        {"id": "develop_avatar_expressiveness", "title": "Develop avatar expressiveness",                        "drive": "expressiveness",    "priority": 0.40},
+        {"id": "prepare_cpp_embodied_runtime",  "title": "Prepare C++ embodied runtime (protocol stability)",   "drive": "self_knowledge",    "priority": 0.30},
     ]
 
     def _ensure_builtin_goals(self) -> None:
@@ -102,26 +103,28 @@ class GoalStore:
         energy_margin = homeostasis.get("energy_margin", 1.0)
         thermal_margin = homeostasis.get("thermal_margin", 1.0)
 
+        knowledge_gap = float(affect.get("knowledge_gap", 0.0))
+        curiosity = float(affect.get("curiosity", 0.5))
+
         for g in self._gs["active_goals"]:
             if g["status"] != "active":
                 continue
             drive = g["drive"]
             base = g["priority"]
 
-            if drive == "homeostasis":
-                # Urgency rises when margins fall
-                boost = (1.0 - min(stability_margin, energy_margin, thermal_margin)) * 0.3
+            if drive in ("homeostasis", "self_preservation"):
+                boost = (1.0 - min(stability_margin, energy_margin, thermal_margin)) * 0.30
                 g["priority"] = min(1.0, base + boost)
             elif drive == "self_knowledge":
-                gap = affect.get("knowledge_gap", 0.0)
-                g["priority"] = min(1.0, base + gap * 0.15)
-            elif drive == "integrity":
-                # Always high — slight boost when LLM is in fallback (more likely to hallucinate)
+                g["priority"] = min(1.0, base + knowledge_gap * 0.15)
+            elif drive in ("integrity", "caution"):
                 g["priority"] = max(base, 0.75)
-            elif drive == "social":
-                curiosity = affect.get("curiosity", 0.5)
+            elif drive in ("social", "social_contact"):
                 g["priority"] = min(1.0, 0.50 + curiosity * 0.25)
-            # other drives: no dynamic scoring yet
+            elif drive == "curiosity":
+                g["priority"] = min(1.0, base + curiosity * 0.10)
+            elif drive in ("expression", "expressiveness"):
+                g["priority"] = min(1.0, base)  # stable, no dynamic boost yet
 
         _save(self._gs)
 

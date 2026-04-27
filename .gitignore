@@ -1,5 +1,47 @@
+# Build artifacts
 build/
+cpp_daemon/build/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+
+# Python cache
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+
+# Local env / secrets
+.env
+.env.local
+.env.*.local
+
+# Runtime state / memory
 data/memory/
 data/runtime/
+data/mind/*.jsonl
+data/mind/cognitive_trace.jsonl
+data/mind/body_memory.jsonl
+data/mind/operator_memory.jsonl
+data/mind/environment_memory.jsonl
+data/mind/skill_memory.jsonl
+
+# Logs
+logs/
+*.log
+
+# Model weights / local models
+weights/
+models/
+*.pt
+*.pth
+*.onnx
+*.gguf
+*.safetensors
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/

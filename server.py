@@ -39,6 +39,8 @@ from soma_core.goals import GoalStore
 from soma_core.memory import SomaMemory
 from soma_core.reflection import ReflectionEngine
 from soma_core.mind import SomaMind
+from soma_core.executor import AutonomousShellExecutor
+from soma_core.self_modify import AutonomousSelfModifier
 
 WS_HOST = "0.0.0.0"
 WS_PORT = 8765
@@ -95,7 +97,7 @@ DEEPSEEK_MODEL = env_first(
 DEEPSEEK_API_KEY = env_first("SOMA_DEEPSEEK_API_KEY", "DEEPSEEK_API_KEY", "OPENAI_API_KEY")
 LLM_TIMEOUT_S = float(os.getenv("SOMA_LLM_TIMEOUT_SEC", os.getenv("SOMA_LLM_TIMEOUT", "30")))
 AUTONOMY_ENABLED = os.getenv("SOMA_AUTONOMY", "1").strip().lower() not in {"0", "false", "no", "off"}
-AUTONOMY_COOLDOWN_S = float(os.getenv("SOMA_AUTONOMY_COOLDOWN_SEC", "20"))
+AUTONOMY_COOLDOWN_S = float(os.getenv("SOMA_AUTONOMY_COOLDOWN_SEC", "90"))  # default 90s per spec
 TICK_HZ = clamp(float(os.getenv("SOMA_TICK_HZ", "2")), 0.2, 20.0)
 SHORT_TERM_TURNS = env_int("SOMA_SHORT_TERM_TURNS", 8, minimum=2)
 SOMATIC_WINDOW = env_int("SOMA_SOMATIC_WINDOW", 12, minimum=4)
@@ -405,7 +407,10 @@ runtime: dict[str, Any] = make_runtime_state()
 _shell_exec = ShellExecutor()
 _hw_discovery = HardwareDiscovery(_shell_exec)
 _self_modifier = SelfModifier(_shell_exec)
-DISCOVERY_ENABLED = os.getenv("SOMA_DISCOVERY", "1").strip().lower() not in {
+DISCOVERY_ENABLED = os.getenv("SOMA_DISCOVERY", "0").strip().lower() not in {
+    "0", "false", "no", "off"
+}
+CAPABILITY_LEARNING_ENABLED = os.getenv("SOMA_CAPABILITY_LEARNING", "0").strip().lower() not in {
     "0", "false", "no", "off"
 }
 DISCOVERY_INTERVAL_S = float(os.getenv("SOMA_DISCOVERY_INTERVAL_SEC", "90"))
@@ -464,6 +469,36 @@ _soma_memory = SomaMemory()
 _goal_store = GoalStore()
 _reflection_engine = ReflectionEngine(_soma_memory, _goal_store)
 _soma_mind = SomaMind(_goal_store, _soma_memory, _reflection_engine)
+
+# ── Autonomous executor (survival-policy-enforced shell + self-modify) ────────
+_AUTONOMY_UNLOCKED = os.getenv("SOMA_AUTONOMY_UNLOCKED", "0").strip().lower() not in {"0", "false", "no", "off"}
+_SHELL_ACTIVE = _AUTONOMY_UNLOCKED or os.getenv("SOMA_SHELL_EXEC", "0").strip().lower() not in {"0", "false", "no", "off"}
+_SELF_MOD_ACTIVE = _AUTONOMY_UNLOCKED or os.getenv("SOMA_SELF_MODIFY", "0").strip().lower() not in {"0", "false", "no", "off"}
+
+from soma_core.config import CFG as _cfg_ref  # noqa: E402 — already imported via soma_core
+_autonomous_exec: AutonomousShellExecutor | None = (
+    AutonomousShellExecutor(
+        _soma_mind._trace, _soma_memory,
+        timeout_s=_cfg_ref.command_timeout_s,
+        max_output_chars=_cfg_ref.max_command_output_chars,
+        min_free_disk_gb=_cfg_ref.min_free_disk_gb,
+        max_memory_pct=_cfg_ref.max_memory_pct,
+        max_cpu_load=_cfg_ref.max_cpu_load,
+        package_mutation_enabled=_cfg_ref.package_mutation_enabled,
+    ) if _SHELL_ACTIVE else None
+)
+_autonomous_self_mod: AutonomousSelfModifier | None = (
+    AutonomousSelfModifier(_autonomous_exec, _soma_mind._trace)
+    if _SELF_MOD_ACTIVE and _autonomous_exec is not None else None
+)
+
+
+def _safe_shell_run(cmd: str, reason: str = "", expected_effect: str = "") -> tuple[bool, str, str]:
+    """Route command through AutonomousShellExecutor when active, otherwise legacy ShellExecutor."""
+    if _autonomous_exec is not None:
+        return _autonomous_exec.propose(cmd, reason=reason, expected_effect=expected_effect)
+    return _shell_exec.run(cmd)
+
 
 # Serializes all internal LLM calls (discovery + capability checks) so they
 # don't compete when the backend LLM is single-threaded (local proxy / ollama).
@@ -1776,11 +1811,11 @@ async def broadcast_ds_turn(
 
 async def try_chat_capability(user_text: str) -> str | None:
     """
-    If the user request can be answered by running a bash command, run it and return stdout.
-    Returns None if not applicable or if the command fails.
-    Broadcasts deepseek_dialogue and cns_stream events for full observability.
-    Caches discovered capabilities and reuses them on future matching requests.
+    If SOMA_CAPABILITY_LEARNING=1: try bash shortcuts then LLM-guided capability check.
+    If SOMA_CAPABILITY_LEARNING=0 (default): return None immediately.
     """
+    if not CAPABILITY_LEARNING_ENABLED:
+        return None
     global _user_caps_count
 
     # ── Direct shortcuts: bypass LLM for known high-value intents ──────────────
@@ -1807,7 +1842,7 @@ async def try_chat_capability(user_text: str) -> str | None:
                 "type": "cns_stream", "kind": "discovery_cmd",
                 "text": f"[CAPABILITY] Direct shortcut: `{_cmd[:80]}` — executing...",
             })
-            ok, stdout, stderr = await asyncio.to_thread(_shell_exec.run, _cmd)
+            ok, stdout, stderr = await asyncio.to_thread(_safe_shell_run, _cmd, "capability shortcut")
             await broadcast_ds_turn("deepseek", f"[SHORTCUT] {'✓ ' + stdout[:120] if ok else '✗ ' + (stderr or 'no output')[:80]}", "capability_check")
             if ok:
                 await broadcast({
@@ -1825,7 +1860,7 @@ async def try_chat_capability(user_text: str) -> str | None:
             "type": "cns_stream", "kind": "discovery_cmd",
             "text": f"[CAPABILITY] Cached cmd for `{intent_key}`: `{cached_cmd[:80]}` — executing...",
         })
-        ok, stdout, stderr = await asyncio.to_thread(_shell_exec.run, cached_cmd)
+        ok, stdout, stderr = await asyncio.to_thread(_safe_shell_run, cached_cmd, "cached capability")
         if ok:
             await broadcast({
                 "type": "cns_stream", "kind": "discovery_result",
@@ -1885,7 +1920,9 @@ async def try_chat_capability(user_text: str) -> str | None:
         "text": f"[CAPABILITY] Chat request triggered: `{cmd[:80]}` — executing in sandbox...",
     })
 
-    ok, stdout, stderr = await asyncio.to_thread(_shell_exec.run, cmd)
+    ok, stdout, stderr = await asyncio.to_thread(
+        _safe_shell_run, cmd, "LLM-generated capability check", "query system state"
+    )
 
     await broadcast({
         "type": "cns_stream",
@@ -2039,7 +2076,14 @@ def build_snapshot() -> dict[str, Any]:
     apply_autonomic_rate(snapshot["policy"])
     snapshot["actuation"] = build_actuation_state(snapshot, snapshot["policy"])
     dispatch_actuation(snapshot)
-    snapshot["mind"] = _soma_mind.tick(snapshot)
+    mind_state = _soma_mind.tick(snapshot)
+    snapshot["mind"] = mind_state
+    # Expose drives and growth at top level for public_payload (include dominant from mind)
+    _d = dict(mind_state.get("drives", {}))
+    _d["dominant"] = mind_state.get("dominant_drive", "")
+    snapshot["_drives"] = _d
+    snapshot["_growth"] = mind_state.get("growth", {})
+    snapshot["_trace"] = mind_state.get("trace", [])
     runtime["last_snapshot"] = snapshot
     remember_somatic_trace(snapshot)
     consolidate_memory(snapshot)
@@ -2101,6 +2145,15 @@ def public_payload(snapshot: dict[str, Any], *, llm_override: dict[str, Any] | N
         "telemetry_caps": _hw_discovery.get_caps(),
         "user_caps_count": _user_caps_count,
         "mind": snapshot.get("mind", {}),
+        "drives": snapshot.get("_drives", {}),
+        "growth": snapshot.get("_growth", {}),
+        "trace": snapshot.get("_trace", []),
+        "capabilities": {
+            "autonomy_unlocked": _AUTONOMY_UNLOCKED,
+            "shell_exec": _autonomous_exec is not None,
+            "self_modify": _autonomous_self_mod is not None,
+            "survival_policy": _autonomous_exec is not None,
+        },
     }
 
 
@@ -2378,6 +2431,7 @@ async def handler(websocket: ServerConnection):
                     continue
 
                 snapshot = build_snapshot()
+                _soma_mind.on_user_message(user_text, snapshot)
                 remember_dialogue_turn("user", user_text, snapshot)
                 llm_meta_override = build_llm_status(snapshot)
 
@@ -2443,16 +2497,37 @@ async def handler(websocket: ServerConnection):
                     pass
 
             elif mtype == "shell_exec":
-                # Operator-requested shell command (must be safe).
+                # Operator-requested shell command — routed through survival policy.
                 cmd = str(msg.get("cmd") or "").strip()
+                reason = str(msg.get("reason") or "operator request")
                 if cmd:
-                    ok, stdout, stderr = await asyncio.to_thread(_shell_exec.run, cmd)
+                    ok, stdout, stderr = await asyncio.to_thread(
+                        _safe_shell_run, cmd, reason, str(msg.get("expected_effect") or "")
+                    )
                     await websocket.send(safe_json_dumps({
                         "type": "shell_result",
                         "cmd": cmd,
                         "ok": ok,
-                        "stdout": stdout[:2048],
+                        "stdout": stdout[:4096],
                         "stderr": stderr[:512],
+                    }))
+
+            elif mtype == "self_modify":
+                # Operator-requested code change — scoped to repo, validated.
+                if _autonomous_self_mod is None:
+                    await websocket.send(safe_json_dumps({
+                        "type": "self_modify_result", "ok": False,
+                        "message": "self-modify not enabled (SOMA_SELF_MODIFY=0)",
+                    }))
+                else:
+                    file_path = str(msg.get("file") or "").strip()
+                    new_content = str(msg.get("content") or "")
+                    reason_sm = str(msg.get("reason") or "operator request")
+                    ok_sm, msg_sm = await asyncio.to_thread(
+                        _autonomous_self_mod.apply, file_path, new_content, reason_sm
+                    )
+                    await websocket.send(safe_json_dumps({
+                        "type": "self_modify_result", "ok": ok_sm, "message": msg_sm,
                     }))
 
             elif mtype == "discovery_trigger":
@@ -2684,13 +2759,13 @@ async def main():
     print(f"[LSF] Actuation: {'enabled' if ACTUATOR_ENABLED else 'disabled'} | transport={ACTUATOR_ENDPOINT or 'file'}")
 
     async with websockets.serve(handler, args.host, args.port):
-        print("[LSF] Server READY - open docs/simulator.html in browser")
+        print("[LSF] Server READY — open docs/simulator.html in browser")
         print(f"[LSF] Volitional Soma Core: active | goals={len(_goal_store.active_goals())} | "
               f"reflections={_soma_memory.get_growth().get('total_reflections', 0)}")
+        from soma_core.config import CFG as _cfg
+        print("[LSF] " + _cfg.feature_gate_table().replace("\n", "\n[LSF] "))
         tick_task = asyncio.create_task(tick_loop())
         disc_task = asyncio.create_task(hardware_discovery_loop()) if DISCOVERY_ENABLED else None
-        print(f"[LSF] Hardware discovery: {'enabled' if DISCOVERY_ENABLED else 'disabled'} "
-              f"| self-modify: {'enabled' if __import__('sensor_providers.discoverer', fromlist=['SELF_MODIFY_ENABLED']).SELF_MODIFY_ENABLED else 'disabled'}")
         try:
             await asyncio.Future()
         except (KeyboardInterrupt, asyncio.CancelledError):

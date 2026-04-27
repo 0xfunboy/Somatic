@@ -222,6 +222,39 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
 #body-img{height:100%;display:block;opacity:0.88;filter:drop-shadow(0 0 14px rgba(0,207,255,.22)) drop-shadow(0 0 5px rgba(112,64,232,.18));pointer-events:none}
 #body-overlay{position:absolute;top:0;left:0;width:100%;height:100%;cursor:crosshair}
 .region-label{position:absolute;left:50%;transform:translateX(-50%);bottom:8px;font-family:var(--mono);font-size:10px;color:var(--cyan);background:rgba(3,13,28,.85);border:1px solid var(--border);border-radius:3px;padding:4px 10px;pointer-events:none;letter-spacing:.08em;white-space:nowrap;display:none}
+
+/* ── mind pane ── */
+.mind-pane-inner{overflow-y:auto;flex:1;padding:10px;display:flex;flex-direction:column;gap:10px}
+.mind-section{border:1px solid var(--border2);border-radius:4px;padding:8px 10px;background:rgba(0,207,255,.02)}
+.mind-section-title{font-size:9px;color:var(--cyan);letter-spacing:.12em;text-transform:uppercase;margin-bottom:6px}
+.mind-row{display:flex;justify-content:space-between;align-items:flex-start;padding:2px 0;border-bottom:1px solid rgba(255,255,255,.04)}
+.mind-row:last-child{border-bottom:none}
+.mind-lbl{font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;flex-shrink:0;padding-right:8px}
+.mind-val{font-size:10px;color:var(--text);text-align:right;max-width:65%}
+.drive-row{display:flex;align-items:center;gap:6px;padding:3px 0}
+.drive-name{font-size:9px;color:var(--text3);width:90px;flex-shrink:0;text-transform:uppercase;letter-spacing:.05em}
+.drive-bar{flex:1;height:4px;background:rgba(255,255,255,.08);border-radius:2px;overflow:hidden}
+.drive-fill{height:100%;border-radius:2px;transition:width .5s}
+.drive-val{font-size:9px;color:var(--text2);width:34px;text-align:right;flex-shrink:0}
+
+/* ── trace pane ── */
+.trace-header{padding:10px 12px 6px;border-bottom:1px solid var(--border);flex-shrink:0}
+.trace-title{font-size:9px;color:var(--cyan);letter-spacing:.14em;text-transform:uppercase}
+.trace-sub{font-size:8px;color:var(--text3);margin-top:2px}
+.trace-filters{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
+.tf-btn{font-size:8px;padding:2px 6px;border:1px solid var(--border2);background:transparent;color:var(--text3);border-radius:2px;cursor:pointer;font-family:var(--head);letter-spacing:.08em}
+.tf-btn.active{border-color:var(--cyan);color:var(--cyan)}
+#trace-list{overflow-y:auto;flex:1;padding:8px;display:flex;flex-direction:column;gap:4px}
+.trace-event{border-left:2px solid var(--border2);padding:4px 8px;font-size:9px;line-height:1.5}
+.trace-event.info{border-left-color:rgba(0,207,255,.4)}
+.trace-event.warning{border-left-color:var(--orange)}
+.trace-event.growth{border-left-color:var(--green)}
+.trace-event.reflection{border-left-color:var(--purple2)}
+.trace-event.exec{border-left-color:var(--cyan,rgba(0,207,255,.7))}
+.trace-phase{font-size:8px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em}
+.trace-summary{color:var(--text);margin-top:2px}
+.trace-conf{font-size:8px;color:var(--text3)}
+.trace-empty{font-size:9px;color:var(--text3);padding:20px;text-align:center}
 </style>
 </head>
 <body>
@@ -240,10 +273,17 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
   </div>
   <div class="tb-sep"></div>
   <div class="tb-info">
-    <div class="tb-badge"><div class="dot dot-red" id="server-dot"></div><span id="server-mode">CNS LINK: OFFLINE</span></div>
-    <div class="tb-badge"><div class="dot dot-yellow" id="hw-dot"></div><span id="hw-mode">SENSOR PROVIDER: MOCK</span></div>
-    <div class="tb-badge"><div class="dot dot-red" id="ws-dot"></div><span id="ws-mode">PROJECTOR: OFF</span></div>
-    <div class="tb-badge"><div class="dot dot-yellow" id="proj-dot"></div><span id="proj-mode">LLM: FALLBACK</span></div>
+    <div class="tb-badge"><div class="dot dot-red" id="server-dot"></div><span id="server-mode">CNS: OFFLINE</span></div>
+    <div class="tb-badge"><div class="dot dot-yellow" id="hw-dot"></div><span id="hw-mode">SENSOR: MOCK</span></div>
+    <div class="tb-badge"><div class="dot dot-red" id="ws-dot"></div><span id="ws-mode">PROJ: OFF</span></div>
+    <div class="tb-badge"><div class="dot dot-yellow" id="proj-dot"></div><span id="proj-mode">LLM: OFF</span></div>
+    <div class="tb-badge"><div class="dot dot-yellow" id="vol-dot"></div><span id="vol-mode">VOL: OFF</span></div>
+    <div class="tb-badge"><div class="dot dot-yellow" id="mem-dot"></div><span id="mem-mode">MEM: OFF</span></div>
+    <div class="tb-badge"><div class="dot dot-yellow" id="trace-dot"></div><span id="trace-mode">TRACE: OFF</span></div>
+    <div class="tb-badge"><div class="dot dot-red" id="auto-dot"></div><span id="auto-mode">AUTONOMY: OFF</span></div>
+    <div class="tb-badge"><div class="dot dot-red" id="shell-dot"></div><span id="shell-mode">SHELL: OFF</span></div>
+    <div class="tb-badge"><div class="dot dot-red" id="selfmod-dot"></div><span id="selfmod-mode">SELF-MOD: OFF</span></div>
+    <div class="tb-badge"><div class="dot dot-red" id="survival-dot"></div><span id="survival-mode">SURVIVAL: OFF</span></div>
   </div>
   <div class="tb-right">
     <button class="tb-btn active" id="btn-run" onclick="toggleRun()">
@@ -758,6 +798,14 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
         <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
         Monitor
       </button>
+      <button class="tab-btn" id="tab-mind" onclick="switchTab('mind')">
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg>
+        Mind
+      </button>
+      <button class="tab-btn" id="tab-trace" onclick="switchTab('trace')">
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+        Trace
+      </button>
       <button class="tab-btn" id="tab-chat" onclick="switchTab('chat')">
         <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
         Chat
@@ -827,6 +875,62 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
           <div class="llm-text">Monitor ready. Connecting to cognitive server at ws://localhost:8765...<span class="llm-cursor"></span></div>
         </div>
       </div>
+    </div>
+
+    <!-- MIND pane -->
+    <div class="tab-pane" id="pane-mind">
+      <div class="mind-pane-inner">
+        <div class="mind-section">
+          <div class="mind-section-title">Volition &amp; Goals</div>
+          <div class="mind-row"><span class="mind-lbl">Active Goal</span><span class="mind-val" id="mp-goal-title">--</span></div>
+          <div class="mind-row"><span class="mind-lbl">Progress</span><span class="mind-val" id="mp-goal-progress">--</span></div>
+          <div class="mind-row"><span class="mind-lbl">Policy Mode</span><span class="mind-val" id="mp-policy">--</span></div>
+          <div class="mind-row"><span class="mind-lbl">Urgency</span><span class="mind-val" id="mp-urgency">--</span></div>
+        </div>
+        <div class="mind-section">
+          <div class="mind-section-title">Drives</div>
+          <div id="mp-drives-list"></div>
+        </div>
+        <div class="mind-section">
+          <div class="mind-section-title">Actions</div>
+          <div class="mind-row"><span class="mind-lbl">Visible Action</span><span class="mind-val" id="mp-visible-action">--</span></div>
+          <div class="mind-row"><span class="mind-lbl">Silent Actions</span><span class="mind-val" id="mp-silent-actions" style="font-size:9px">--</span></div>
+        </div>
+        <div class="mind-section">
+          <div class="mind-section-title">Reflection &amp; Memory</div>
+          <div class="mind-row"><span class="mind-lbl">Last Reflection</span><span class="mind-val" id="mp-reflection">--</span></div>
+          <div class="mind-row"><span class="mind-lbl">Last Learned</span><span class="mind-val" id="mp-learned" style="font-size:9px;line-height:1.4">--</span></div>
+        </div>
+        <div class="mind-section">
+          <div class="mind-section-title">Growth</div>
+          <div class="mind-row"><span class="mind-lbl">Stage</span><span class="mind-val" id="mp-stage">--</span></div>
+          <div class="mind-row"><span class="mind-lbl">Score</span><span class="mind-val" id="mp-growth-score">--</span></div>
+          <div class="mind-row"><span class="mind-lbl">Reflections</span><span class="mind-val" id="mp-reflections">--</span></div>
+          <div class="mind-row"><span class="mind-lbl">Body Patterns</span><span class="mind-val" id="mp-body-patterns">--</span></div>
+          <div class="mind-row"><span class="mind-lbl">Evolution Target</span><span class="mind-val" id="mp-evo-target" style="font-size:9px">--</span></div>
+          <div class="mind-row"><span class="mind-lbl">Next Step</span><span class="mind-val" id="mp-next-step" style="font-size:9px;line-height:1.4">--</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TRACE pane -->
+    <div class="tab-pane" id="pane-trace">
+      <div class="trace-header">
+        <div class="trace-title">COGNITIVE TRACE</div>
+        <div class="trace-sub">Observable runtime trace — not hidden LLM chain-of-thought.</div>
+        <div class="trace-filters">
+          <button class="tf-btn active" onclick="setTraceFilter('all',this)">ALL</button>
+          <button class="tf-btn" onclick="setTraceFilter('perception',this)">PERCEPT</button>
+          <button class="tf-btn" onclick="setTraceFilter('drives',this)">DRIVES</button>
+          <button class="tf-btn" onclick="setTraceFilter('goals',this)">GOALS</button>
+          <button class="tf-btn" onclick="setTraceFilter('policy',this)">POLICY</button>
+          <button class="tf-btn" onclick="setTraceFilter('action_selection',this)">ACTIONS</button>
+          <button class="tf-btn" onclick="setTraceFilter('reflection',this)">REFLECT</button>
+          <button class="tf-btn" onclick="setTraceFilter('warning',this)">WARN</button>
+          <button class="tf-btn" onclick="setTraceFilter('growth',this)">GROWTH</button>
+        </div>
+      </div>
+      <div id="trace-list"></div>
     </div>
 
     <!-- CHAT pane -->
@@ -1275,6 +1379,8 @@ function renderSensors() {
   setRing('gx', S.gx, 5); setRing('gy', S.gy, 5); setRing('gz', S.gz, 5);
 
   renderSystemTelemetry();
+  renderMindPane();
+  renderTracePane();
 }
 
 function setTelemetryBar(prefix, value, maxValue, suffix, colorFn) {
@@ -1347,34 +1453,234 @@ function renderSystemTelemetry() {
   renderMindState();
 }
 
+// Left-panel mini mind state (always visible)
 function renderMindState() {
   const mind = window._MIND || {};
   const goalTitle = mind.active_goal_title || '--';
   const goalProgress = (mind.active_goal_progress !== undefined && mind.active_goal_progress !== null)
     ? `${Math.round(mind.active_goal_progress * 100)}%` : '--';
   const drive = mind.dominant_drive
-    ? `${mind.dominant_drive} (${(mind.dominant_drive_intensity || 0).toFixed(2)})`
+    ? `${mind.dominant_drive} (${Number(mind.dominant_drive_intensity || 0).toFixed(2)})`
     : '--';
   const policy = mind.policy_mode ? String(mind.policy_mode).toUpperCase() : '--';
 
   let reflectionStr = '--';
   if (mind.last_reflection_at && mind.last_reflection_at > 0) {
     const age = Math.round((Date.now() / 1000) - mind.last_reflection_at);
-    const trigger = mind.last_reflection_trigger || '';
-    reflectionStr = `${age}s ago · ${trigger.replace(':', ': ')}`;
+    reflectionStr = `${age}s ago`;
   }
 
   const learned = mind.last_learned || '--';
-  const llmFlag = mind.llm_live ? '🟢 LLM LIVE' : '🟡 FALLBACK';
+  const llmFlag = mind.llm_live ? 'LLM LIVE' : 'FALLBACK';
   const volFlag = mind.volition_enabled ? 'VOL ON' : 'VOL OFF';
 
-  document.getElementById('mind-goal-title').textContent = goalTitle;
-  document.getElementById('mind-goal-progress').textContent = goalProgress;
-  document.getElementById('mind-drive').textContent = drive;
-  document.getElementById('mind-policy').textContent = policy;
-  document.getElementById('mind-reflection').textContent = reflectionStr;
-  document.getElementById('mind-learned').textContent = learned;
-  document.getElementById('mind-flags').textContent = `${llmFlag} · ${volFlag}`;
+  const el = id => document.getElementById(id);
+  if (el('mind-goal-title')) el('mind-goal-title').textContent = goalTitle;
+  if (el('mind-goal-progress')) el('mind-goal-progress').textContent = goalProgress;
+  if (el('mind-drive')) el('mind-drive').textContent = drive;
+  if (el('mind-policy')) el('mind-policy').textContent = policy;
+  if (el('mind-reflection')) el('mind-reflection').textContent = reflectionStr;
+  if (el('mind-learned')) el('mind-learned').textContent = learned;
+  if (el('mind-flags')) el('mind-flags').textContent = `${llmFlag} · ${volFlag}`;
+}
+
+// Full mind tab render
+function renderMindPane() {
+  const mind = window._MIND || {};
+  const growth = window._GROWTH || mind.growth || {};
+  const drives = window._DRIVES || mind.drives || {};
+  const el = id => document.getElementById(id);
+
+  const set = (id, val) => { const e = el(id); if (e) e.textContent = val; };
+
+  set('mp-goal-title', mind.active_goal_title || '--');
+  const prog = mind.active_goal_progress;
+  set('mp-goal-progress', prog != null ? `${Math.round(prog * 100)}% ` + _progressBar(prog) : '--');
+  set('mp-policy', mind.policy_mode ? mind.policy_mode.replace(/_/g,' ').toUpperCase() : '--');
+  set('mp-urgency', mind.policy_urgency != null ? Number(mind.policy_urgency).toFixed(2) : '--');
+
+  // Drives list
+  const driveContainer = el('mp-drives-list');
+  if (driveContainer && Object.keys(drives).length) {
+    const driveColors = {
+      self_preservation: 'var(--red)',
+      stability: 'var(--orange)',
+      self_knowledge: 'var(--cyan)',
+      social_contact: 'var(--purple2)',
+      expressiveness: 'var(--purple)',
+      curiosity: 'var(--cyan2)',
+      caution: 'var(--yellow)',
+      energy_conservation: 'var(--green)',
+    };
+    const sorted = Object.entries(drives)
+      .filter(([k]) => k !== 'dominant')
+      .sort(([,a],[,b]) => b - a);
+    driveContainer.innerHTML = sorted.map(([name, val]) => {
+      const pct = Math.round(val * 100);
+      const color = driveColors[name] || 'var(--cyan)';
+      const isDom = name === mind.dominant_drive ? ' style="font-weight:bold;color:var(--cyan)"' : '';
+      return `<div class="drive-row">
+        <span class="drive-name"${isDom}>${name.replace(/_/g,' ')}</span>
+        <div class="drive-bar"><div class="drive-fill" style="width:${pct}%;background:${color}"></div></div>
+        <span class="drive-val">${val.toFixed(2)}</span>
+      </div>`;
+    }).join('');
+  }
+
+  // Actions
+  const visAction = mind.visible_action || 'neutral_idle';
+  const visInt = mind.visible_action_intensity != null ? ` (${Number(mind.visible_action_intensity).toFixed(2)})` : '';
+  set('mp-visible-action', visAction.replace(/_/g,' ') + visInt);
+  const silentList = Array.isArray(mind.silent_actions) ? mind.silent_actions.join(', ') : '--';
+  set('mp-silent-actions', silentList || '--');
+
+  // Reflection
+  let refStr = '--';
+  if (mind.last_reflection_at && mind.last_reflection_at > 0) {
+    const age = Math.round((Date.now()/1000) - mind.last_reflection_at);
+    const trigger = mind.last_reflection_trigger || '';
+    refStr = `${age}s ago — ${trigger.replace(':', ': ')}`;
+  }
+  set('mp-reflection', refStr);
+  set('mp-learned', mind.last_learned || '--');
+
+  // Growth
+  set('mp-stage', (growth.stage || '--').replace(/_/g,' '));
+  set('mp-growth-score', growth.growth_score != null ? Number(growth.growth_score).toFixed(4) : '--');
+  set('mp-reflections', growth.total_reflections ?? '--');
+  set('mp-body-patterns', growth.learned_body_patterns ?? '--');
+  set('mp-evo-target', (growth.current_evolution_target || '--').replace(/_/g,' '));
+  set('mp-next-step', growth.next_growth_step || '--');
+}
+
+function _progressBar(val) {
+  const filled = Math.round(val * 10);
+  return '[' + '█'.repeat(filled) + '░'.repeat(10 - filled) + ']';
+}
+
+// Cognitive trace render
+let _traceFilter = 'all';
+function setTraceFilter(phase, btn) {
+  _traceFilter = phase;
+  document.querySelectorAll('.tf-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderTracePane();
+}
+
+function renderTracePane() {
+  const trace = window._TRACE || [];
+  const container = document.getElementById('trace-list');
+  if (!container) return;
+  const filtered = _traceFilter === 'all' ? trace : trace.filter(e => e.phase === _traceFilter);
+  if (!filtered.length) {
+    container.innerHTML = '<div class="trace-empty">No trace events yet. Events appear as the volitional loop runs.</div>';
+    return;
+  }
+  const shown = filtered.slice(-20);
+  container.innerHTML = shown.map(e => {
+    const ts = new Date(e.timestamp * 1000).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+    const levelClass = e.level || 'info';
+    const _execPhases = new Set(['command_executed','command_proposed','command_risk_check','skill_learned','self_modify_validated']);
+    const _blockPhases = new Set(['command_blocked','self_modify_reverted']);
+    const phaseClass = e.phase === 'reflection' ? 'reflection'
+      : e.phase === 'growth' ? 'growth'
+      : _blockPhases.has(e.phase) ? 'warning'
+      : _execPhases.has(e.phase) ? 'info'
+      : levelClass;
+    const conf = e.confidence != null ? ` · conf ${Number(e.confidence).toFixed(2)}` : '';
+    return `<div class="trace-event ${phaseClass}">
+      <div class="trace-phase">${e.phase.replace(/_/g,' ')} · ${ts}${conf}</div>
+      <div class="trace-summary">${e.summary || ''}</div>
+    </div>`;
+  }).join('');
+  container.scrollTop = container.scrollHeight;
+}
+
+// Truthful status bar
+function updateTruthfulStatusBar(msg) {
+  const provider = msg.provider || {};
+  const projector = msg.projector || {};
+  const llm = msg.llm || {};
+  const mind = msg.mind || window._MIND || {};
+
+  // Sensor provider
+  const hwEl = document.getElementById('hw-mode');
+  const hwDot = document.getElementById('hw-dot');
+  if (hwEl) {
+    const isReal = !!provider.is_real;
+    const pname = (provider.name || 'mock').toUpperCase();
+    const quality = provider.source_quality != null ? ` Q${Number(provider.source_quality).toFixed(2)}` : '';
+    hwEl.textContent = isReal ? `SENSOR: REAL [${pname}]${quality}` : `SENSOR: MOCK`;
+    if (hwDot) hwDot.className = `dot ${isReal ? 'dot-green' : 'dot-yellow'}`;
+  }
+
+  // Projector
+  const projEl = document.getElementById('ws-mode');
+  const projDot = document.getElementById('ws-dot');
+  if (projEl && projector) {
+    const pmode = (projector.mode || 'off').toUpperCase();
+    const available = !!projector.available;
+    projEl.textContent = available ? `PROJ: ${pmode === 'TORCHSCRIPT' ? 'ACTIVE' : pmode}` : 'PROJ: FALLBACK';
+    if (projDot) projDot.className = `dot ${available && pmode === 'TORCHSCRIPT' ? 'dot-green' : available ? 'dot-yellow' : 'dot-red'}`;
+  }
+
+  // LLM
+  const llmEl = document.getElementById('proj-mode');
+  const llmDot = document.getElementById('proj-dot');
+  if (llmEl && llm) {
+    const lmode = (llm.mode || 'off').toUpperCase();
+    const available = !!llm.available;
+    let label, dotClass;
+    if (available && lmode === 'DEEPSEEK') { label = 'LLM: DEEPSEEK'; dotClass = 'dot-green'; }
+    else if (available && lmode === 'OPENAI_COMPATIBLE') { label = 'LLM: OPENAI_COMPAT'; dotClass = 'dot-green'; }
+    else if (lmode === 'OFF') { label = 'LLM: OFF'; dotClass = 'dot-red'; }
+    else { label = 'LLM: FALLBACK / REFLEX'; dotClass = 'dot-yellow'; }
+    llmEl.textContent = label;
+    if (llmDot) llmDot.className = `dot ${dotClass}`;
+  }
+}
+
+function updateVolitionStatus(mind) {
+  const volEl = document.getElementById('vol-mode');
+  const volDot = document.getElementById('vol-dot');
+  const memEl = document.getElementById('mem-mode');
+  const memDot = document.getElementById('mem-dot');
+  if (volEl) {
+    const enabled = mind.volition_enabled;
+    volEl.textContent = enabled ? 'VOL: ACTIVE' : 'VOL: OFF';
+    if (volDot) volDot.className = `dot ${enabled ? 'dot-green' : 'dot-red'}`;
+    memEl && (memEl.textContent = 'MEM: ACTIVE');
+    memDot && (memDot.className = 'dot dot-green');
+  }
+}
+
+function updateTraceStatus(active) {
+  const el = document.getElementById('trace-mode');
+  const dot = document.getElementById('trace-dot');
+  if (el) { el.textContent = active ? 'TRACE: ACTIVE' : 'TRACE: OFF'; }
+  if (dot) { dot.className = `dot ${active ? 'dot-green' : 'dot-red'}`; }
+}
+
+function updateCapabilityBadges(caps) {
+  if (!caps) return;
+  const setBadge = (dotId, modeId, text, active) => {
+    const dot = document.getElementById(dotId);
+    const el = document.getElementById(modeId);
+    if (dot) dot.className = `dot ${active ? 'dot-green' : 'dot-red'}`;
+    if (el) el.textContent = text;
+  };
+  setBadge('auto-dot', 'auto-mode',
+    caps.autonomy_unlocked ? 'AUTONOMY: UNLOCKED' : 'AUTONOMY: OFF',
+    caps.autonomy_unlocked);
+  setBadge('shell-dot', 'shell-mode',
+    caps.shell_exec ? 'SHELL: ENABLED' : 'SHELL: OFF',
+    caps.shell_exec);
+  setBadge('selfmod-dot', 'selfmod-mode',
+    caps.self_modify ? 'SELF-MOD: ENABLED' : 'SELF-MOD: OFF',
+    caps.self_modify);
+  setBadge('survival-dot', 'survival-mode',
+    caps.survival_policy ? 'SURVIVAL: ACTIVE' : 'SURVIVAL: OFF',
+    caps.survival_policy);
 }
 
 // ─────────────────────────────────────────────
@@ -2076,7 +2382,7 @@ function formatChatResponse(tmpl) {
     .replace(/{scenario_label}/g, scenario_labels[scenario] || 'NOMINAL');
 }
 
-function appendMsg(role, text, urgency) {
+function appendMsg(role, text, urgency, llmSource) {
   const cm = document.getElementById('chat-messages');
   const ts  = new Date().toTimeString().slice(0,8);
   const div = document.createElement('div');
@@ -2084,8 +2390,10 @@ function appendMsg(role, text, urgency) {
   div.className = `msg msg-${role} ${cls}`;
   if (role === 'entity') {
     const stateLabels = {nominal:'NOMINAL',lowbatt:'PWR_CRITICAL',overheat:'THERM_WARN',cold:'COLD_STATE',fall:'FALL_DETECT',spin:'ROT_ANOMALY',heavyload:'LOAD_MAX'};
+    const srcLabel = llmSource === 'llm' ? 'LLM' : llmSource === 'fallback_recovered' ? 'RECOVERED' : 'REFLEX';
+    const srcColor = srcLabel === 'LLM' ? 'var(--green)' : srcLabel === 'RECOVERED' ? 'var(--orange)' : 'var(--text3)';
     div.innerHTML = `
-      <div class="msg-state-tag">ENTITY [${stateLabels[scenario]||'NOMINAL'}]</div>
+      <div class="msg-state-tag">ENTITY [${stateLabels[scenario]||'NOMINAL'}] <span style="color:${srcColor};margin-left:6px">${srcLabel}</span></div>
       <div class="msg-bubble">${text}</div>
       <div class="msg-meta">${ts} · V=${S.voltage.toFixed(2)}V · T=${S.temp_si.toFixed(1)}°C · Z=${S.az.toFixed(2)}m/s²</div>`;
   } else {
@@ -2209,10 +2517,10 @@ function setServerStatus(connected) {
   const modeEl = document.getElementById('server-mode');
   if (connected) {
     dot.className = 'dot dot-green';
-    modeEl.textContent = 'CNS LINK: ONLINE';
+    modeEl.textContent = 'CNS: PYTHON';
   } else {
     dot.className = 'dot dot-red';
-    modeEl.textContent = 'CNS LINK: OFFLINE';
+    modeEl.textContent = 'CNS: OFFLINE';
   }
 }
 
@@ -2223,8 +2531,8 @@ function setProviderBadge(isReal, name) {
   const modeEl = document.getElementById('hw-mode');
   dot.className = isReal ? 'dot dot-green' : 'dot dot-yellow';
   modeEl.textContent = isReal
-    ? `SENSOR PROVIDER: REAL (${avatarState.providerLabel})`
-    : 'SENSOR PROVIDER: MOCK';
+    ? `SENSOR: REAL [${avatarState.providerLabel}]`
+    : 'SENSOR: MOCK';
 }
 
 function setProjectorStatus(projectorInfo) {
@@ -2232,15 +2540,16 @@ function setProjectorStatus(projectorInfo) {
   const modeEl = document.getElementById('ws-mode');
   avatarState.projectorAvailable = !!projectorInfo?.available;
   avatarState.projectorMode = projectorInfo?.mode || avatarState.projectorMode || 'fallback';
-  if (avatarState.projectorAvailable) {
+  const mode = avatarState.projectorMode.toUpperCase();
+  if (avatarState.projectorAvailable && mode === 'TORCHSCRIPT') {
     dot.className = 'dot dot-green';
-    modeEl.textContent = 'PROJECTOR: ACTIVE';
-  } else if (avatarState.projectorMode === 'fallback') {
+    modeEl.textContent = 'PROJ: ACTIVE';
+  } else if (avatarState.projectorAvailable) {
     dot.className = 'dot dot-yellow';
-    modeEl.textContent = 'PROJECTOR: FALLBACK';
+    modeEl.textContent = `PROJ: ${mode}`;
   } else {
-    dot.className = 'dot dot-red';
-    modeEl.textContent = 'PROJECTOR: OFF';
+    dot.className = 'dot dot-yellow';
+    modeEl.textContent = 'PROJ: FALLBACK';
   }
 }
 
@@ -2249,12 +2558,16 @@ function setLlmStatus(enabled, mode) {
   avatarState.llmMode = mode || avatarState.llmMode;
   const dot = document.getElementById('proj-dot');
   const modeEl = document.getElementById('proj-mode');
-  if (avatarState.llmEnabled && avatarState.llmMode !== 'fallback' && avatarState.llmMode !== 'off') {
+  const lm = (avatarState.llmMode || 'off').toLowerCase();
+  if (avatarState.llmEnabled && lm !== 'fallback' && lm !== 'off') {
     dot.className = 'dot dot-green';
-    modeEl.textContent = `LLM: CONNECTED (${String(avatarState.llmMode).toUpperCase()})`;
+    modeEl.textContent = `LLM: ${lm.toUpperCase()}`;
+  } else if (lm === 'off') {
+    dot.className = 'dot dot-red';
+    modeEl.textContent = 'LLM: OFF';
   } else {
     dot.className = 'dot dot-yellow';
-    modeEl.textContent = avatarState.llmMode === 'off' ? 'LLM: OFF' : 'LLM: FALLBACK';
+    modeEl.textContent = 'LLM: FALLBACK / REFLEX';
   }
   updateChatCoreStatus();
 }
@@ -2325,6 +2638,22 @@ function applySnapshot(msg) {
   }
   if (msg.mind && typeof msg.mind === 'object') {
     window._MIND = msg.mind;
+    updateVolitionStatus(msg.mind);
+  }
+  if (msg.drives && typeof msg.drives === 'object') {
+    window._DRIVES = msg.drives;
+  }
+  if (msg.growth && typeof msg.growth === 'object') {
+    window._GROWTH = msg.growth;
+  }
+  if (msg.trace && Array.isArray(msg.trace)) {
+    window._TRACE = msg.trace;
+    updateTraceStatus(true);
+  }
+  // Truthful status badges + capability badges
+  updateTruthfulStatusBar(msg);
+  if (msg.capabilities && typeof msg.capabilities === 'object') {
+    updateCapabilityBadges(msg.capabilities);
   }
 
   if (msg.hz) {
@@ -2393,7 +2722,8 @@ function handleWSMessage(msg) {
     const sc = msg.scenario || scenario;
     const urgency = (sc==='fall'||S.voltage<10.5) ? 'critical'
       : (sc==='overheat'||sc==='lowbatt'||sc==='cold'||sc==='spin') ? 'warn' : '';
-    appendMsg('entity', msg.text || '…', urgency);
+    const llmSource = (msg.llm && msg.llm._source) || (msg.llm && msg.llm.available ? 'llm' : 'fallback');
+    appendMsg('entity', msg.text || '…', urgency, llmSource);
     totalTokens += Math.ceil((msg.text || '').split(/\s+/).filter(Boolean).length * 1.3);
     document.getElementById('stat-tokens').textContent = totalTokens;
     chatBusy = false;

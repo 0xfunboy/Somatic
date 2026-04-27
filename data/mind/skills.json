@@ -1,5 +1,7 @@
 {
-  "confirmed_capabilities": [],
+  "confirmed_capabilities": [
+    "df"
+  ],
   "confirmed_unavailable": [],
   "bash_shortcuts": [
     {
@@ -8,5 +10,5 @@
       "source": "direct_shortcut"
     }
   ],
-  "updated_at": 0
+  "updated_at": 1777311767.5223062
 }

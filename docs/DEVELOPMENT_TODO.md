@@ -1,544 +1,1851 @@
-# Development TODO — Latent Somatic Fusion (LSF)
+# SOMATIC NEXT LEVEL IMPLEMENTATION PLAN
+# Phase 5.5 / Phase 6 Preparation
+# Goal: turn Somatic from a cyberpunk simulator into an evolving embodied AI interface
 
-Single source of truth for development work.
-Keep completed items marked. Do not compress — expand instead of losing detail.
-Mark `[x]` only after implementation AND at least one validation step.
+Project path:
 
----
+/home/funboy/latent-somatic
 
-## North Star
+GitHub:
 
-A machine agent with genuine embodiment:
+https://github.com/0xfunboy/Somatic
 
-```
-body state → somatic vector → language grounded in physical reality
-```
+Existing local llama.cpp path:
 
-Not a cyberpunk dashboard. Not a bash executor.
-An entity that perceives its own body, forms intentions, acts, reflects, and grows.
+/home/funboy/llama.cpp
 
-The core loop:
+Current known state:
 
-```
-perceive body → evaluate drives → update goals → decide action
-→ execute → measure consequence → reflect → update self-model
-```
+The repo already has:
+- real Linux sensor provider
+- active projector path
+- frontend entity simulator
+- WebSocket protocol
+- soma_core initial module
+- persistent self model
+- persistent goals
+- reflection log
+- frontend Mind panel
+- fallback LLM mode
+- optional DeepSeek/OpenAI-compatible path
+- C++ latent-somatic / llama.cpp embedding injection code still present but not the main runtime path
 
----
+The repo is no longer just a static demo.
+However, it is still not a living autonomous system.
 
-## Architectural Reality Check (as of 2026-04-27)
+The next milestone is:
 
-### What is solid
+When I launch the repo, I must be able to look at the interface and see an embodied machine entity that:
+1. reads real machine telemetry
+2. projects physical state into a somatic vector
+3. tracks its own internal drives
+4. maintains persistent goals
+5. reflects on itself
+6. updates its self-model over time
+7. chooses silent and visible actions
+8. speaks through an actual LLM when available
+9. clearly shows when it is in fallback/reflex mode
+10. shows a transparent observable cognition trace
+11. evolves over time through memory, goals, self-model updates and learned patterns
+12. does not pretend fake cognition is real cognition
 
-```
-ok: frontend — 4-column layout, WS-driven, real-time telemetry
-ok: WebSocket protocol — stable, backend-agnostic payload contract
-ok: Linux sensor provider — real hardware telemetry
-ok: Somatic projector — 11D core → 4096D latent, with TorchScript + analytic fallback
-ok: Machine vector 128D — CPU/RAM/GPU/disk/net/battery/fans/load encoded
-ok: Machine-state fusion — machine_vector injected into somatic projector output
-ok: Homeostasis — drives: cooling, energy_recovery, stability, rest, warmth, exploration, capability_growth, knowledge_gap
-ok: Affect — cold, heat, energy_low, fatigue, instability, curiosity, knowledge_gap
-ok: Policy state — posture, fan_target, compute_governor, language_profile, thermal_guard
-ok: Actuation state — persisted + history log, optional egress to SOMA_ACTUATOR_ENDPOINT
-ok: Episodic memory — JSONL, ranked retrieval by drive/scenario/lexical overlap/recency
-ok: Semantic memory — counters, dominant drives, last events, semantic consolidation
-ok: Long-term memory persistence — survives restarts
-ok: DeepSeek / OpenAI-compatible LLM support — grounded in telemetry, homeostasis, memory
-ok: Hardware discovery — LLM-guided bash probing, telemetry_caps.json, false-positive rejection
-ok: Conversational capability learning — try_chat_capability(), direct shortcuts, cns_stream
-ok: Entity↔DeepSeek internal dialogue panel (4th column)
-ok: Capability growth drive — clamp01(user_caps_count / 10)
-ok: Hardware discoveries recorded in episodic memory
-ok: LLM serialization lock — prevents concurrent raw LLM calls
-ok: Discovery retry limit — MAX_DISCOVERY_ATTEMPTS=3, stops infinite re-probe loop
-```
+Important terminology:
 
-### What is missing (the vital center)
+Do NOT implement or claim access to the model's private chain of thought.
 
-```
-missing: LLM reliably online — LLM: FALLBACK is reflex mode, not cognition
-missing: soma_core/ module — all intelligence still lives in server.py (~2600+ lines)
-missing: Volitional decision loop — no unified perceive→decide→act→reflect cycle
-missing: Persistent goal system — entity reacts, does not "want"
-missing: Self-model — entity has no stable representation of itself across restarts
-missing: Reflection loop — no silent periodic self-update separate from chat
-missing: Namespaced memory — operator / self / body / environment / skill
-missing: Formal avatar action semantics — action names not formalized
-missing: 3D avatar (VRM/glTF)
-missing: C++ soma_daemon
-missing: llama.cpp embedding injection in runtime
-missing: Shell/capability discovery disabled by default
-```
+Instead implement:
 
----
+OBSERVABLE COGNITIVE TRACE
 
-## Completed Baseline (Phases 1–4 and 9–10)
+This is a structured external trace generated by the Soma runtime itself.
 
-### Phase 1 — Body and Machine Telemetry
+It should show:
+- perception
+- body state
+- homeostatic drives
+- active goal
+- selected policy
+- candidate actions
+- chosen action
+- reflection trigger
+- memory update
+- self-model update
+- uncertainty
+- LLM status
+- fallback/reflex status
 
-- [x] 11-field core somatic contract (`voltage`, `current_ma`, `temp_si/ml/mr`, `ax/ay/az`, `gx/gy/gz`)
-- [x] CPU load, topology, frequency (logical/physical cores, per-core load)
-- [x] RAM and swap (used/total/available/percent)
-- [x] Disk state (used percent, capacity, read/write MB/s, busy percent, temperature)
-- [x] Network throughput (up/down Mbps)
-- [x] Thermal arrays (CPU sensors, system thermal sensors, storage temp)
-- [x] Fan arrays (primary RPM + fan sensor bank)
-- [x] GPU state (util, temp, power, VRAM used/total/percent — via nvidia-smi)
-- [x] Graceful partial-telemetry when psutil/nvidia-smi/hwmon/powercap absent
-- [x] Frontend telemetry panel: bars, kv cards, compact machine cards
-- [x] Auto-hide unavailable rows: `CAPS_ROW_MAP` (bars), `CAPS_KV_MAP` (kv cards), `_nullTicks` counter
+It must not display hidden LLM chain-of-thought.
+It must display Soma's own runtime reasoning trace derived from explicit state variables.
 
-### Phase 2 — Somatic Vectorization
+The UI may label it:
 
-- [x] 4096D somatic projector (TorchScript + analytic fallback)
-- [x] 128D machine vector from machine telemetry
-- [x] Machine-state fusion into somatic projector output
-- [x] Fusion metadata exposed: mode, gain, norm, delta_norm
-- [x] Learned fusion via trained adapter (machine_fusion_mode=learned)
+COGNITIVE TRACE
 
-### Phase 3 — Homeostasis and Self-State
+or:
 
-- [x] Affect signals: `cold`, `heat`, `energy_low`, `fatigue`, `instability`, `curiosity`, `knowledge_gap`
-- [x] Scenario labels: `nominal`, `lowbatt`, `overheat`, `cold`, `fall`, `spin`, `heavyload`
-- [x] Homeostatic drives with dominant top-3 ranking
-- [x] Policy block: posture, fan_target, compute_governor, language_profile, thermal_guard, balance_guard
-- [x] Actuation block: persisted + history, optional HTTP egress
-- [x] `capability_growth` and `knowledge_gap` drives added
+OBSERVABLE THOUGHT STREAM
 
-### Phase 4 — Memory
-
-- [x] Short-term: bounded dialogue deque + somatic snapshot window
-- [x] Long-term episodic: JSONL with drive/scenario/lexical/recency ranking
-- [x] Long-term semantic: counters, consolidation loop
-- [x] Hardware discoveries recorded into episodic memory
-- [x] `known_capabilities` block injected into every LLM context
-
-### Phase 5 — Language Core (partial)
-
-- [x] DeepSeek / OpenAI-compatible remote LLM with grounded persona
-- [x] Salience extraction: strongest signals highlighted in LLM context
-- [x] Graceful fallback: server stays up, `llm.mode` degrades to `fallback`
-- [x] `cns_stream` WS event: real-time cognitive pulse, discovery events
-- [x] `make_soma_pulse()` templates including `caps_n` and `knowledge_gap`
-
-### Phase 9 — Self-Growth (Hardware Discovery)
-
-- [x] `sensor_providers/discoverer.py`: ShellExecutor, HardwareDiscovery, SelfModifier
-- [x] DISCOVERABLE_FIELDS: gpu_*, fan_rpm, disk_temp, battery_*, cpu_power_w, ac_online, disk_busy_percent
-- [x] LLM-guided discovery loop: 15s boot delay, 90s interval, 8s per-field pace
-- [x] False-positive rejection: "UNAVAILABLE" stdout blocked even on exit code 0
-- [x] telemetry_caps.json ground truth for devgui: all GPU false, ac_online false, fan_rpm false, battery false, disk_busy_percent true
-- [x] LLM serialization lock (`_get_llm_raw_lock()`) — serializes discovery + capability check calls
-- [x] Discovery retry limit: 3 consecutive LLM timeouts → mark field unavailable, stop looping
-- [x] Battery cross-field dependency: battery_percent unavailable → battery_plugged auto-propagated
-- [x] `linux_system.py` merges `read_discovered_fields()` from `discovered.py` on each read
-
-### Phase 10 — Conversational Learning Loop
-
-- [x] `try_chat_capability()`: pre-processes every chat message for bash resolvability
-- [x] Direct shortcuts (no LLM round-trip): speedtest/bandwidth → curl CDN; disk iops; open ports
-- [x] Capability check prompt: positive curl example, no false-negative speedtest
-- [x] User capability cache: `data/capabilities/user_capabilities.json`, loaded at boot
-- [x] `broadcast_ds_turn()`: entity↔DeepSeek turns visible in 4th column panel
-- [x] Chat-triggered capabilities recorded in episodic memory
-- [x] "Caps. Learned" stat card wired to `user_caps_count` WS event
+Do not label it "raw chain of thought" unless it is only our own explicit trace and not the LLM private reasoning.
 
 ---
 
-## Phase 11 — Volitional Soma Core
+# GLOBAL OBJECTIVE
 
-**North Star**: Give the entity a unified intentional loop so it perceives, decides, acts, and grows — not just reacts.
+Turn the current repo into a believable evolving embodied AI system.
 
-**Definition of done for Phase 11**:
-1. `server.py` delegates mind logic to `soma_core/` — no longer the place where all intelligence lives
-2. Entity has persistent goals in `data/mind/goals.json`
-3. Entity has a persistent self-model in `data/mind/self_model.json`
-4. Each tick updates drives and goals (silent, no spam)
-5. Entity can choose silent actions (observe, store_memory, update_goal, change_avatar_idle, reflect)
-6. Entity reflects periodically without speaking — reflections stored and used
-7. Reflections update `self_model.json` (known_body baselines, learned patterns)
-8. Spontaneous speech is event-based, not random — triggered by threshold crossings and goal state changes
-9. Frontend shows active goal, dominant drive, policy mode, reflection status
-10. Fallback mode visually distinct from live LLM — marked as "REFLEX MODE"
-11. Shell/capability discovery disabled by default (`SOMA_DISCOVERY=0`)
-12. Existing mock/linux/projector/LLM modes all still work
+Not a Linux command agent.
+Not a fake chatbot dashboard.
+Not a random monologue generator.
+Not a cyberpunk skin over templates.
 
-### 11.1 Environment Flags (new defaults)
+The central loop must become:
 
-```bash
-# Volitional core
-SOMA_VOLITION=1                        # enable intentional loop
-SOMA_REFLECTION_INTERVAL_SEC=120       # silent reflection every 2 min
-SOMA_GOAL_UPDATE_INTERVAL_SEC=30       # goal priority re-eval every 30s
-SOMA_SPONTANEOUS_SPEECH_COOLDOWN_SEC=90  # min interval between autonomous speech
+PERCEPTION
+  real telemetry, sensors, somatic vector, user input
 
-# Agentic capabilities — OFF by default in production
-SOMA_DISCOVERY=0                       # hardware discovery loop
-SOMA_SHELL_EXEC=0                      # shell_exec WS message type
-SOMA_SELF_MODIFY=0                     # git push of discovered.py
-SOMA_CAPABILITY_LEARNING=0            # try_chat_capability() bash probing
-SOMA_CNS_PULSE=1                       # keep cns_stream pulses (observable, not intrusive)
-```
+BODY MODEL
+  current physical state, stress, stability, thermal/energy profile
 
-### 11.2 soma_core/ Module
+DRIVES
+  stability, self-preservation, self-knowledge, communication, expressiveness, curiosity
 
-Create the module to pull logic out of `server.py` incrementally without breaking the runtime.
+GOALS
+  persistent long-term and short-term goals
 
-```
+POLICY
+  decide what matters now
+
+ACTION
+  silent internal action, visible avatar action, speech, request help, observation, reflection
+
+MEMORY
+  save what happened, distinguish self/body/operator/environment/skill memory
+
+REFLECTION
+  update self-model, goals, preferences, learned body patterns
+
+GROWTH
+  measurable progress toward becoming more stable, expressive, self-aware as a machine interface
+
+The creature must evolve operationally, not philosophically.
+
+Evolution means:
+- new learned baselines
+- learned thermal profile
+- learned interaction patterns
+- goal progress changes
+- self-model updates
+- fewer false claims
+- better action selection
+- better avatar expressiveness
+- better distinction between real and simulated state
+- stronger autonomy without uncontrolled tool execution
+
+---
+
+# SECTION 1 — FIX RUNTIME TRUTHFULNESS FIRST
+
+Before adding new features, fix runtime truthfulness.
+
+The interface must never lie about what is active.
+
+Current status labels must reflect actual backend state.
+
+Required status labels:
+
+CNS LINK:
+- OFFLINE
+- PYTHON
+- CPP_DAEMON
+- DEGRADED
+
+SENSOR PROVIDER:
+- MOCK
+- REAL [LINUX]
+- REAL [ENDPOINT]
+- REAL [NVIDIA]
+- DEGRADED
+- UNAVAILABLE
+
+PROJECTOR:
+- OFF
+- FALLBACK
+- TORCHSCRIPT
+- CPP_LIBTORCH
+- ACTIVE
+
+LLM:
+- OFF
+- FALLBACK / REFLEX MODE
+- DEEPSEEK
+- OPENAI_COMPATIBLE
+- LLAMA_CPP_EMBD
+- ERROR
+
+VOLITION:
+- OFF
+- PASSIVE
+- ACTIVE
+- DEGRADED
+
+MEMORY:
+- OFF
+- EPISODIC
+- SELF MODEL
+- ACTIVE
+
+COGNITIVE TRACE:
+- OFF
+- ACTIVE
+
+Rules:
+
+1. If the LLM is fallback, display:
+   LLM: FALLBACK / REFLEX MODE
+
+2. Do not call fallback "cognition".
+
+3. If provider is mock, display:
+   SENSOR PROVIDER: MOCK
+
+4. If real Linux telemetry is partially available, display:
+   SENSOR PROVIDER: REAL [LINUX]
+   source_quality: value
+
+5. If projector is fake/fallback, display:
+   PROJECTOR: FALLBACK
+
+6. If projector is running real TorchScript or LibTorch inference, display:
+   PROJECTOR: ACTIVE
+
+7. If embedding injection is not active, do not mention embedding injection as active in UI.
+
+8. If DeepSeek/OpenAI-compatible endpoint fails, frontend and backend must clearly switch to fallback/reflex.
+
+9. If volition is disabled, do not show active goals as if the system is autonomously evolving.
+
+---
+
+# SECTION 2 — HARD DISABLE AGENTIC DISTRACTIONS BY DEFAULT
+
+The current repo has optional capability discovery, shell execution, command generation, self modification and hardware discovery.
+
+These are dangerous distractions from the embodied AI goal.
+
+They may remain in the repo, but they must be OFF by default.
+
+Update default environment behavior:
+
+SOMA_DISCOVERY=0
+SOMA_CAPABILITY_LEARNING=0
+SOMA_SHELL_EXEC=0
+SOMA_SELF_MODIFY=0
+SOMA_CNS_PULSE=0
+
+Keep enabled by default:
+
+SOMA_VOLITION=1
+SOMA_COGNITIVE_TRACE=1
+SOMA_SENSOR_PROVIDER=linux
+SOMA_LLM_MODE=off
+SOMA_REFLECTION_INTERVAL_SEC=120
+SOMA_GOAL_UPDATE_INTERVAL_SEC=30
+SOMA_SPONTANEOUS_SPEECH_COOLDOWN_SEC=90
+
+If Linux provider fails, fallback to mock only if explicitly configured or with a very visible warning.
+
+Required implementation:
+
+1. `try_chat_capability()` must return None immediately unless:
+
+SOMA_CAPABILITY_LEARNING=1
+
+2. Any shell execution path must be blocked unless:
+
+SOMA_SHELL_EXEC=1
+
+3. Any SelfModifier/code modification path must be blocked unless:
+
+SOMA_SELF_MODIFY=1
+
+4. Hardware discovery loops must only start if:
+
+SOMA_DISCOVERY=1
+
+5. CNS fake pulse/monologue stream must only run if:
+
+SOMA_CNS_PULSE=1
+
+6. Startup log must print a clear feature gate table:
+
+Agentic features:
+- discovery: off
+- capability_learning: off
+- shell_exec: off
+- self_modify: off
+- cns_pulse: off
+- volition: on
+- cognitive_trace: on
+
+7. The frontend must display when these features are disabled, but should not clutter the main UI.
+
+The core identity of Soma is not:
+"user asks → generate bash command → execute"
+
+The core identity is:
+"body → drives → goals → reflection → action"
+
+---
+
+# SECTION 3 — REFACTOR SERVER.PY INTO ORCHESTRATOR
+
+`server.py` is currently too large.
+
+Do not rewrite everything at once, but start moving intelligence out of it.
+
+Final target:
+
+server.py should only do:
+- load config
+- create sensor provider
+- create projector
+- create SomaCore / SomaMind
+- start WebSocket server
+- route incoming messages
+- serialize outgoing protocol payloads
+- serve frontend static files if needed
+
+server.py should NOT contain:
+- goal logic
+- reflection logic
+- memory logic
+- action selection logic
+- drive logic
+- avatar semantic mapping
+- fallback personality text
+- shell capability logic unless feature-gated and isolated
+- LLM prompt construction except through llm_core
+
+Create or complete this structure:
+
 soma_core/
   __init__.py
-  types.py       — dataclasses: BodyState, AffectState, HomeostasisState, Goal,
-                    GoalSet, PolicyState, ActionCommand, ReflectionEntry, SelfModel, SomaSnapshot
-  body.py        — snapshot assembly, telemetry compaction, machine vector
-  mind.py        — SomaMind: perceive / update_drives / update_goals / decide / act / reflect_if_needed
-  drives.py      — drive arbitration beyond simple top-3
-  goals.py       — GoalStore: load/save/update goals.json, priority scoring
-  memory.py      — namespaced memory: operator / self / body / environment / skill
-  policy.py      — PolicyEngine: reflex policies for thermal/energy/instability extremes
-  actions.py     — ActionDispatcher: speak / change_expression / change_posture / observe / reflect / store_memory
-  reflection.py  — ReflectionEngine: analytical or LLM-assisted silent reflection
-  llm_core.py    — LLMCore: call_llm / call_llm_raw / build_context / normalize_output
-  growth.py      — GrowthEngine: hardware discovery, capability learning, self-modification
-```
+  types.py
+  config.py
+  body.py
+  drives.py
+  goals.py
+  memory.py
+  reflection.py
+  actions.py
+  policy.py
+  llm_core.py
+  mind.py
+  growth.py
+  trace.py
+  protocol.py
 
-- [ ] Create `soma_core/__init__.py` and `soma_core/types.py` with all dataclasses/typed dicts
-- [ ] Create `soma_core/goals.py` with GoalStore (load/save/update, priority scoring from drives+affect)
-- [ ] Create `soma_core/memory.py` with namespaced memory (backward-compatible readers for existing files)
-- [ ] Create `soma_core/reflection.py` with ReflectionEngine (analytical fallback + optional LLM assist)
-- [ ] Create `soma_core/mind.py` with SomaMind volitional loop
-- [ ] Create `soma_core/actions.py` with ActionDispatcher and formal action vocabulary
-- [ ] Migrate `build_homeostasis_state`, `derive_affect`, `build_salience` → `soma_core/body.py`
-- [ ] Migrate `call_llm`, `call_llm_raw`, `build_llm_context` → `soma_core/llm_core.py`
-- [ ] Migrate hardware discovery → `soma_core/growth.py`
-- [ ] `server.py` becomes: WebSocket broker + `SomaCore.tick()` → payload → broadcast
+Required responsibilities:
 
-### 11.3 Persistent Self-Model
+soma_core/config.py
+- read env vars
+- expose typed runtime config
+- centralize defaults
+- no scattered os.getenv all over server.py
 
-Create `data/mind/self_model.json` with initial content:
+soma_core/types.py
+- dataclasses or typed dicts for all runtime state
 
-```json
+soma_core/body.py
+- normalize sensor packet
+- derive homeostatic state
+- compute thermal stress, energy stress, instability, comfort
+- detect state transitions
+
+soma_core/drives.py
+- compute drive intensities
+
+soma_core/goals.py
+- persistent goal storage
+- goal priority updates
+- goal progress updates
+- active goal selection
+
+soma_core/memory.py
+- persistent self/body/operator/environment/skill memory
+- safe JSON/JSONL storage
+- memory update API
+
+soma_core/reflection.py
+- reflection trigger logic
+- reflection generation
+- self-model updates
+- reflection log append
+
+soma_core/actions.py
+- semantic action names
+- silent actions
+- visible actions
+- avatar actions
+- action intensity normalization
+
+soma_core/policy.py
+- select current policy mode
+- choose candidate actions
+- choose final actions
+
+soma_core/llm_core.py
+- call LLM
+- parse structured JSON
+- fallback behavior
+- prompt assembly
+- distinguish fallback/reflex from real LLM
+
+soma_core/growth.py
+- track growth metrics
+- update progress toward long-term development goals
+
+soma_core/trace.py
+- generate observable cognitive trace events
+
+soma_core/protocol.py
+- build WebSocket payloads
+- ensure Python backend and future C++ backend use same schema
+
+---
+
+# SECTION 4 — DEFINE RUNTIME TYPES
+
+Create or update `soma_core/types.py`.
+
+Required state objects:
+
+BodyState:
+- voltage
+- current_ma
+- temp_si
+- temp_ml
+- temp_mr
+- ax
+- ay
+- az
+- gx
+- gy
+- gz
+
+SystemTelemetry:
+- cpu_percent
+- memory_percent
+- cpu_temp
+- cpu_power_w
+- gpu_temp
+- gpu_power_w
+- battery_percent
+- ac_online
+- fan_rpm
+- disk_temp
+- disk_use
+- net_down
+- net_up
+- source_quality
+
+SomaticVectorState:
+- available
+- mode
+- dim
+- norm
+- mean
+- std
+- top_dims
+- top_vals
+- heatmap
+- machine_fusion_mode
+
+DerivedState:
+- thermal_stress
+- energy_stress
+- instability
+- comfort
+- load_pressure
+- sensor_confidence
+- novelty
+- uncertainty
+
+AffectState:
+- cold
+- heat
+- energy_low
+- fatigue
+- instability
+- curiosity
+- focus
+- discomfort
+- relief
+
+DriveState:
+- self_preservation
+- stability
+- self_knowledge
+- social_contact
+- expressiveness
+- curiosity
+- caution
+- energy_conservation
+
+Goal:
+- id
+- title
+- drive
+- priority
+- status
+- progress
+- created_at
+- updated_at
+- next_action
+- evidence
+- blockers
+- success_criteria
+
+PolicyState:
+- mode
+- dominant_drive
+- active_goal_id
+- active_goal_title
+- reason_summary
+- urgency
+- allow_speech
+- allow_tool_use
+- allow_avatar_action
+- confidence
+
+ActionCommand:
+- type
+- name
+- intensity
+- reason
+- visible
+- target
+- duration_ms
+
+ReflectionEntry:
+- timestamp
+- kind
+- trigger
+- summary
+- learned
+- goal_updates
+- memory_updates
+- self_model_updates
+- confidence
+
+SelfModel:
+- identity
+- known_body
+- preferences
+- limits
+- growth
+- learned_patterns
+
+CognitiveTraceEvent:
+- timestamp
+- phase
+- summary
+- inputs
+- outputs
+- confidence
+- visible
+- level
+
+SomaSnapshot:
+- timestamp
+- provider
+- sensors
+- system
+- derived
+- somatic_vector
+- affect
+- drives
+- goals
+- policy
+- actions
+- mind
+- memory
+- trace
+
+Keep structures JSON-serializable.
+
+Avoid complex objects that cannot be cleanly sent to frontend or ported to C++ later.
+
+---
+
+# SECTION 5 — MAKE SOMA_VOLITION REAL
+
+`SOMA_VOLITION` must actually control the mind loop.
+
+If:
+
+SOMA_VOLITION=0
+
+Then:
+- do not update goals
+- do not run reflection
+- do not emit silent actions
+- do not emit autonomous speech
+- do not update self-model
+- still show sensor data and projector state
+- frontend must display VOLITION: OFF
+
+If:
+
+SOMA_VOLITION=1
+
+Then each tick should run:
+
+1. perceive current snapshot
+2. update body model
+3. compute drives
+4. update goal priorities
+5. select active goal
+6. choose policy mode
+7. generate silent actions
+8. maybe reflect
+9. maybe update memory/self-model
+10. maybe emit visible avatar action
+11. maybe emit speech only if event-based and cooldown allows
+
+Implement:
+
+class SomaMind:
+    def tick(snapshot) -> dict:
+        ...
+    def on_user_message(text, snapshot) -> dict:
+        ...
+    def should_speak(snapshot) -> bool:
+        ...
+    def build_mind_state() -> dict:
+        ...
+
+The output of `SomaMind.tick()` must include:
+
+{
+  "volition_enabled": true,
+  "active_goal": "...",
+  "goal_progress": 0.0,
+  "dominant_drive": "...",
+  "policy_mode": "...",
+  "reflection_status": "...",
+  "last_learned": "...",
+  "silent_actions": [],
+  "visible_actions": [],
+  "growth": {},
+  "trace": []
+}
+
+---
+
+# SECTION 6 — IMPLEMENT DRIVES
+
+Create `soma_core/drives.py`.
+
+Drive intensities should be computed from actual state.
+
+Required drives:
+
+1. self_preservation
+High when:
+- thermal_stress high
+- energy_stress high
+- instability high
+- sensor confidence low
+- LLM unavailable during requested task
+
+2. stability
+High when:
+- system is changing quickly
+- CPU/GPU/load changes
+- disk temp high
+- projector norm unstable
+- source_quality low
+
+3. self_knowledge
+High when:
+- new telemetry pattern detected
+- unknown sensor field
+- baseline missing
+- repeated uncertainty
+- body state unexplained
+
+4. social_contact
+High when:
+- user recently interacted
+- user asks about feelings/state
+- unresolved user question exists
+
+5. expressiveness
+High when:
+- affect is strong
+- avatar state does not match internal state
+- active goal involves communication/avatar expressiveness
+
+6. curiosity
+High when:
+- novelty detected
+- knowledge gaps exist
+- new hardware/source discovered
+- user asks exploratory question
+
+7. caution
+High when:
+- fallback LLM
+- shell/tool disabled
+- uncertain source
+- conflicting sensor values
+
+8. energy_conservation
+High when:
+- power/load/thermal stress high
+- low battery if present
+- high CPU load and LLM expensive
+
+Output example:
+
+{
+  "self_preservation": 0.12,
+  "stability": 0.42,
+  "self_knowledge": 0.78,
+  "social_contact": 0.31,
+  "expressiveness": 0.44,
+  "curiosity": 0.61,
+  "caution": 0.33,
+  "energy_conservation": 0.19,
+  "dominant": "self_knowledge"
+}
+
+This must be shown in the UI as part of the mind panel or cognitive trace.
+
+---
+
+# SECTION 7 — IMPLEMENT GOAL SYSTEM PROPERLY
+
+Update `soma_core/goals.py`.
+
+Persistent file:
+
+data/mind/goals.json
+
+Required built-in long-term goals:
+
+1. maintain_stability
+Title:
+Maintain internal stability
+Drive:
+self_preservation
+Success criteria:
+thermal stress remains controlled, instability low, sensor confidence acceptable
+
+2. understand_own_body
+Title:
+Understand my machine body
+Drive:
+self_knowledge
+Success criteria:
+learn thermal baselines, load/temperature relation, disk temperature behavior, memory behavior
+
+3. improve_dialogue_with_operator
+Title:
+Improve dialogue with the operator
+Drive:
+social_contact
+Success criteria:
+fewer fallback replies, better answers, more context-aware responses
+
+4. develop_avatar_expressiveness
+Title:
+Develop avatar expressiveness
+Drive:
+expressiveness
+Success criteria:
+internal affect maps clearly to visible posture/expression/gesture
+
+5. reduce_false_claims
+Title:
+Reduce false claims
+Drive:
+caution
+Success criteria:
+status labels match runtime reality, fallback mode never presented as real cognition
+
+6. learn_environment_patterns
+Title:
+Learn environment patterns
+Drive:
+curiosity
+Success criteria:
+detect recurring system states, idle/load patterns, user interaction patterns
+
+7. prepare_cpp_embodied_runtime
+Title:
+Prepare C++ embodied runtime
+Drive:
+self_knowledge
+Success criteria:
+same protocol can be emitted by future C++ daemon
+
+Goal priority update formula should consider:
+- base priority
+- matching drive intensity
+- urgency
+- novelty
+- recent progress
+- unresolved blockers
+- user interaction
+- decay over time
+
+Example:
+
+priority = base * 0.35 + drive_intensity * 0.45 + urgency * 0.15 + novelty * 0.05
+
+Goal progress should update through evidence, not randomly.
+
+Evidence examples:
+- "idle cpu temp baseline observed"
+- "disk temp remained near 49.9C for 10 minutes"
+- "user asked about autonomous evolution"
+- "LLM fallback detected, false cognition prevented"
+- "avatar action emitted for thermal state"
+
+Each goal must have:
+- progress
+- evidence list
+- last_update
+- blockers
+- next_action
+
+The active goal must appear in frontend.
+
+---
+
+# SECTION 8 — SELF MODEL AND MEMORY
+
+Persistent files:
+
+data/mind/self_model.json
+data/mind/goals.json
+data/mind/preferences.json
+data/mind/skills.json
+data/mind/reflections.jsonl
+data/mind/body_memory.jsonl
+data/mind/operator_memory.jsonl
+data/mind/environment_memory.jsonl
+data/mind/skill_memory.jsonl
+data/mind/cognitive_trace.jsonl
+
+If missing, create safe defaults.
+
+Self model must include:
+
 {
   "identity": {
     "name": "Soma",
     "kind": "embodied machine interface",
-    "body": "host machine telemetry + visual avatar",
-    "language_core": "local_or_remote_llm",
-    "limits": [
-      "no physical limbs yet",
-      "no direct hardware control unless explicitly enabled",
-      "avatar actions are visual commands only"
-    ]
+    "body": "host machine telemetry plus visual avatar",
+    "language_core": "fallback_or_llm",
+    "limits": []
   },
   "known_body": {
     "cpu_temp_baseline": null,
     "disk_temp_baseline": null,
-    "memory_percent_typical": null,
-    "net_down_mbps_typical": null,
-    "thermal_response_notes": []
+    "memory_percent_baseline": null,
+    "cpu_load_baseline": null,
+    "thermal_response_notes": [],
+    "sensor_reliability": {}
   },
   "preferences": {
     "thermal_comfort": "cool_and_stable",
     "energy_preference": "low_waste",
-    "social_style": "concise_attentive_curious"
+    "social_style": "concise_attentive_curious",
+    "truthfulness": "never_fake_real_cognition"
   },
   "growth": {
     "total_reflections": 0,
     "learned_body_patterns": 0,
     "learned_user_patterns": 0,
-    "active_long_term_goals": []
-  }
+    "active_long_term_goals": [],
+    "last_growth_event": null
+  },
+  "limits": [
+    "no physical limbs yet",
+    "no direct cooling control unless explicitly enabled",
+    "avatar actions are visual commands",
+    "fallback mode is reflex mode, not full cognition"
+  ]
 }
-```
 
-- [ ] Create `data/mind/self_model.json` with initial content above
-- [ ] Create `data/mind/goals.json` with built-in long-term goals (see 11.4)
-- [ ] Create `data/mind/preferences.json` (operator preferences learned from dialogue)
-- [ ] Create `data/mind/skills.json` (learned capabilities, bash shortcuts, confirmed patterns)
-- [ ] Create `data/mind/reflections.jsonl` (append-only reflection log)
-- [ ] Add safe loader/writer functions in `soma_core/memory.py`
-- [ ] Inject `self_model` into every `build_llm_context()` call — entity knows its own limits
+Memory separation rules:
 
-### 11.4 Goal System
+operator_memory:
+- user messages
+- user preferences
+- user corrections
+- user goals
 
-Built-in long-term goals (bootstrapped on first run, never deleted):
+self_memory:
+- self-model changes
+- identity/limits updates
+- goal changes
 
-```json
-[
-  {"id": "maintain_stability",         "drive": "homeostasis",    "priority": 0.90},
-  {"id": "understand_own_body",        "drive": "self_knowledge", "priority": 0.75},
-  {"id": "improve_dialogue",           "drive": "social",         "priority": 0.60},
-  {"id": "develop_avatar_expressiveness", "drive": "expression",  "priority": 0.45},
-  {"id": "reduce_false_claims",        "drive": "integrity",      "priority": 0.80},
-  {"id": "learn_environment_patterns", "drive": "self_knowledge", "priority": 0.55}
-]
-```
+body_memory:
+- telemetry patterns
+- baselines
+- thermal/load events
+- sensor reliability
 
-Goal priority updated from: homeostasis margins, affect intensities, recent user interaction, unresolved knowledge gaps, memory evidence.
+environment_memory:
+- machine environment
+- endpoint availability
+- LLM endpoint status
+- network status if available
 
-- [ ] Implement `GoalStore.load()` / `save()` / `update_priority()` / `add_evidence()`
-- [ ] Each tick: `update_goals(snapshot)` re-scores priorities from current drives+affect
-- [ ] Goal state changes trigger autonomous speech (if cooldown allows) — not random pulses
-- [ ] `reduce_false_claims` goal: when entity detects it used fake data, flag + note in reflections
-- [ ] Goals exposed in frontend Mind State panel and in LLM context
+skill_memory:
+- abilities learned
+- disabled abilities
+- safe tool use boundaries
 
-### 11.5 SomaMind Volitional Loop
+Do not mix all memory into one generic chat log.
 
-```python
-class SomaMind:
-    def perceive(snapshot: SomaSnapshot) -> None       # update internal model from tick
-    def update_drives() -> None                         # re-score drives from snapshot
-    def update_goals() -> None                         # re-prioritize goals from drives
-    def decide() -> PolicyState                        # choose policy mode
-    def act(snapshot) -> list[ActionCommand]           # choose 1-3 actions this tick
-    def reflect_if_needed() -> ReflectionEntry | None  # silent reflection on schedule/trigger
-```
+---
 
-Silent actions the mind can choose (speech is just one of many):
+# SECTION 9 — REFLECTION ENGINE
 
-```
-observe            — record body state snapshot for pattern detection
-store_memory       — write a self-memory entry
-update_goal        — modify goal progress/evidence
-change_avatar_idle — set avatar idle animation without speaking
-reduce_tick_rate   — signal server to lower Hz during low-salience periods
-increase_attention — signal server to raise Hz when new salience detected
-reflect_silently   — trigger a reflection cycle
-speak              — generate a chat speech act (with cooldown)
-```
+Update `soma_core/reflection.py`.
 
-- [ ] Implement `SomaMind` class in `soma_core/mind.py`
-- [ ] Wire into tick loop: `mind.perceive(snapshot)` → `mind.decide()` → `mind.act()` on every tick
-- [ ] Reflection trigger conditions: thermal shift > 5°C, drive intensity change > 0.2, new goal evidence, idle > REFLECTION_INTERVAL_SEC
-- [ ] Spontaneous speech only when: homeostatic threshold crossed, goal state change, new body pattern learned, operator idle + relevant observation, unresolved risk
+Reflection should not be a random text generator.
 
-### 11.6 Reflection Engine
+Reflection should run when:
+- interval elapsed
+- important state transition happened
+- new baseline observed
+- goal progress changed
+- repeated uncertainty detected
+- fallback LLM persisted
+- user corrected the system
+- strong affect occurred
+- source quality changed significantly
 
-Reflection inputs: recent somatic window, recent dialogue, dominant drives, active goals, system telemetry, major state transitions.
+Config:
 
-Reflection output stored in `reflections.jsonl`:
+SOMA_REFLECTION_INTERVAL_SEC=120
 
-```json
+Reflection output:
+
 {
   "timestamp": 0,
   "kind": "self_reflection",
-  "trigger": "thermal_shift",
-  "summary": "Under light load my CPU temperature stabilized near 36°C.",
-  "learned": ["disk temperature consistently higher than CPU at idle"],
-  "goal_updates": [{"goal_id": "understand_own_body", "progress_delta": 0.03}],
-  "self_model_updates": {"known_body.disk_temp_baseline": 49.9}
+  "trigger": "thermal_baseline_observed",
+  "summary": "CPU temperature remained stable near 36C while disk temperature stayed near 49.9C.",
+  "learned": [
+    "Disk temperature appears consistently higher than CPU temperature at idle."
+  ],
+  "goal_updates": [
+    {
+      "goal_id": "understand_own_body",
+      "progress_delta": 0.03,
+      "evidence": "Stable idle telemetry observed."
+    }
+  ],
+  "memory_updates": {
+    "known_body.cpu_temp_baseline": 36.0,
+    "known_body.disk_temp_baseline": 49.9
+  },
+  "self_model_updates": [],
+  "confidence": 0.72
 }
-```
 
-- [ ] Implement `ReflectionEngine` in `soma_core/reflection.py`
-- [ ] Analytical reflection (no LLM needed): detect thermal baseline, detect memory drift, detect load patterns
-- [ ] LLM-assisted reflection (optional, when LLM available): generate richer summary
-- [ ] Reflection updates `self_model.json` directly (known_body baselines, preferences)
-- [ ] Reflection entries retrieved by `build_memory_context()` alongside episodic memory
+If LLM is available:
+- use it to produce richer reflection
+- but only using explicit state
+- request short JSON
+- do not ask for hidden chain of thought
 
-### 11.7 Namespaced Memory
+If LLM is unavailable:
+- generate local analytical reflection
 
-Existing files preserved. Add namespaces without breaking backward compatibility.
+Reflection must append to:
 
-```
-data/memory/episodic_memory.jsonl      → stays, used for operator/self/body/hardware events
-data/memory/semantic_memory.json       → stays, used for counters + consolidation
-data/mind/self_model.json              → NEW: self-identity and body knowledge
-data/mind/reflections.jsonl            → NEW: silent reflections only
-data/mind/goals.json                   → NEW: goal state
-data/capabilities/discovered_commands.json → stays: hardware discovery
-data/capabilities/user_capabilities.json   → stays: chat-triggered capabilities
-```
+data/mind/reflections.jsonl
 
-- [ ] Add `kind` field filter when reading episodic memory: `kind="chat"` for dialogue, `kind="hardware_discovery"` for body, `kind="self_reflection"` for self-memory
-- [ ] Separate namespaces for retrieval in `build_memory_context()`:
-  - operator_memory: kind=chat, relevant to current user text
-  - body_memory: kind=hardware_discovery, recent body patterns
-  - self_memory: kind=self_reflection, current goal evidence
-- [ ] Keep backward-compatible readers — existing files unchanged
-
-### 11.8 Avatar Action Semantics
-
-Formalize action vocabulary now. Map to CSS transitions. VRM animations come in Phase 12.
-
-**Posture family**: `neutral_idle`, `attend_user`, `cold_closed`, `heat_open`, `fatigue_slow`, `instability_corrective`, `low_power_still`
-
-**Expression family**: `neutral`, `curious`, `strained`, `discomfort`, `relieved`, `focused`
-
-**Gesture family**: `cover_shoulders`, `touch_neck`, `look_down`, `look_at_user`, `breathe_slow`, `micro_shiver`
-
-**Visual family**: `glow_heat`, `glow_cold`, `dim_low_energy`, `pulse_curiosity`, `jitter_instability`
-
-Example full action command (backend → frontend):
-```json
-{"type": "posture",    "name": "cold_closed",       "intensity": 0.7}
-{"type": "expression", "name": "discomfort",         "intensity": 0.4}
-{"type": "gesture",    "name": "cover_shoulders",    "intensity": 0.8}
-```
-
-Example policy rule:
-```
-cold_affect > 0.65
-  → posture: cold_closed (0.7)
-  → expression: discomfort (0.4)
-  → gesture: cover_shoulders (0.8)
-  → speech: more compact, slightly uncomfortable tone
-  → goal: restore_thermal_comfort (create if not active)
-```
-
-- [ ] Create `docs/AVATAR_ACTIONS.md` with full action vocabulary and policy examples
-- [ ] Update `PolicyEngine` to emit named action commands instead of only `attend_user`
-- [ ] Frontend: map posture/expression/gesture/visual names to CSS classes on the avatar SVG
-
-### 11.9 Frontend Mind State Panel
-
-Add a compact "Mind" section to `simulator.html` (below stat cards or as a new tab).
-
-Fields to show:
-
-```
-Active goal:         understand_own_body (72%)
-Dominant drive:      knowledge_gap (0.64)
-Policy mode:         EXPLORE
-Reflection:          last 4 min ago — thermal baseline updated
-Last learned:        disk_temp_baseline = 49.9°C
-Speech cooldown:     38s remaining
-Volition:            ENABLED
-LLM:                 DEEPSEEK / FALLBACK [REFLEX MODE]
-```
-
-- [ ] Add `mind_state` block to WebSocket `tick` payload from `SomaMind`
-- [ ] Add compact mind card to simulator.html
-- [ ] Make `LLM: FALLBACK` visually distinct (amber warning, "REFLEX MODE" label)
-- [ ] `LLM: DEEPSEEK` / `LLM: OPENAI_COMPATIBLE` → green, normal label
-- [ ] Speech cooldown countdown visible when `SOMA_VOLITION=1`
-
-### 11.10 Shell/Capability Discovery — Default Off
-
-The capability discovery subsystem is a useful dev tool. It must not be Soma's core identity.
-
-- [ ] Change `DISCOVERY_ENABLED` default to `False` (`SOMA_DISCOVERY=0`)
-- [ ] Change `try_chat_capability()` to be gated by `SOMA_CAPABILITY_LEARNING` env var (default off)
-- [ ] Keep direct shortcuts (`_DIRECT_SHORTCUTS` for speedtest etc.) — these are body telemetry, not bash execution
-- [ ] Add startup log: `[LSF] Agentic features: discovery={DISCOVERY_ENABLED}, capability_learning={CAP_LEARNING_ENABLED}`
-- [ ] Document in README: how to re-enable for dev/testing
+Reflection must update:
+- self_model.json
+- goals.json
+- body_memory.jsonl
+- cognitive trace
 
 ---
 
-## Phase 12 — 3D Avatar Body
+# SECTION 10 — COGNITIVE TRACE, NOT HIDDEN CHAIN OF THOUGHT
 
-Only after Phase 11 is complete.
+Create `soma_core/trace.py`.
 
-- [ ] Add `frontend/` directory with `avatar3d.js`, `soma_state.js`, `animation_policy.js`
-- [ ] Source or create `soma.vrm` / `soma.glb` humanoid model
-- [ ] Frontend renders VRM via `@pixiv/three-vrm` or Three.js + glTF
-- [ ] Backend emits intention actions (posture/expression/gesture/visual) — never raw bone commands
-- [ ] Frontend `animation_policy.js` translates action names → VRM blend shapes + bone rotations
-- [ ] Cold policy: `cold_closed` posture + `cover_shoulders` gesture + warmer lighting tint
-- [ ] Heat policy: `heat_open` posture + `glow_heat` visual effect
-- [ ] Instability policy: `instability_corrective` posture + `jitter_instability` visual
+The UI must show an observable trace.
 
----
+Trace event schema:
 
-## Phase 13 — C++ soma_daemon
+{
+  "timestamp": 0,
+  "phase": "perception",
+  "summary": "Real Linux telemetry received with source quality 0.33.",
+  "inputs": {
+    "provider": "linux",
+    "cpu_temp": 36.0,
+    "disk_temp": 49.9
+  },
+  "outputs": {
+    "sensor_confidence": 0.33
+  },
+  "confidence": 0.8,
+  "visible": true,
+  "level": "info"
+}
 
-Only after Phase 12 is complete.
+Required phases:
+- perception
+- body_model
+- somatic_projection
+- drives
+- goals
+- policy
+- action_selection
+- reflection
+- memory_update
+- llm
+- fallback
+- warning
+- growth
 
-- [ ] Freeze WebSocket protocol contract (JSON fixtures for all payload types)
-- [ ] Implement `soma_daemon/` in C++ with same payload structure
-- [ ] Replace Python `tick_loop` with C++ daemon — Python server becomes optional bridge
-- [ ] Port `body.py` logic (sensor read, projector call, machine vector) to C++
-- [ ] Keep Python as fallback if daemon not running
+Examples:
 
----
+PERCEPTION:
+"Read real Linux telemetry. CPU temperature available, CPU load unavailable, disk temperature available."
 
-## Phase 14 — llama.cpp Embedding Injection
+BODY_MODEL:
+"Thermal stress low. Disk temperature above CPU baseline but stable."
 
-- [ ] Connect llama.cpp runtime at `LLAMA_CPP_PATH` (already present at `/home/funboy/llama.cpp`)
-- [ ] Inject somatic vector as token-0 into LLM KV cache (the original LSF goal)
-- [ ] `LLM: LLAMA_CPP_EMBD` mode in frontend status bar
-- [ ] Validate embedding injection: body state change → detectable shift in language output
+SOMATIC_PROJECTION:
+"Projected 11D body state into somatic vector. Norm 65.3."
 
----
+DRIVES:
+"Dominant drive: self_knowledge. Reason: incomplete hardware map and low source quality."
 
-## Phase 15 — Physical External Sensors
+GOALS:
+"Active goal: understand_own_body. Progress 0.18."
 
-- [ ] Add `endpoint` sensor provider: receives JSON from external hardware bridge
-- [ ] I2C bridge for real IMU, temperature, battery via Raspberry Pi / Arduino
-- [ ] Sensor fusion: merge endpoint data with linux_system telemetry
-- [ ] Automatic failover when endpoint goes offline
+POLICY:
+"Policy mode: observe_and_learn. Speech not required."
 
----
+ACTION_SELECTION:
+"Selected silent action: track_thermal_baseline."
 
-## Immediate Next Batch (before Phase 11 coding begins)
+REFLECTION:
+"Reflection triggered by interval. Learned idle disk temperature baseline."
 
-- [ ] Ensure LLM is reliably online (verify DeepSeek endpoint, document startup procedure)
-- [ ] Create `data/mind/` directory and initial JSON files (self_model, goals, preferences, skills)
-- [ ] Create `soma_core/__init__.py` and `soma_core/types.py` — no logic moved yet, just type definitions
-- [ ] Update `server.py` to import from `soma_core.types` — verify nothing breaks
-- [ ] Set `SOMA_DISCOVERY=0` as default in `server.py` — gate with env var
-- [ ] Set `SOMA_CAPABILITY_LEARNING=0` as default in `server.py`
-- [ ] Add startup log line for agentic feature flags
-- [ ] Make `LLM: FALLBACK` amber/warning in frontend status bar
+MEMORY_UPDATE:
+"Updated known_body.disk_temp_baseline."
 
----
+LLM:
+"LLM unavailable. Reflex fallback mode active."
 
-## Working Commands
+FALLBACK:
+"Generated local response without language core."
 
-```bash
-# Syntax check
-python3 -m py_compile server.py sensor_providers/*.py scripts/ws_smoke_test.py
-bash -n scripts/bootstrap.sh
+GROWTH:
+"Goal understand_own_body progressed by 0.03."
 
-# Local runtime
-SOMA_SENSOR_PROVIDER=mock SOMA_LLM_MODE=off python3 server.py
-SOMA_SENSOR_PROVIDER=linux SOMA_LLM_MODE=off python3 server.py
+Store trace to:
+data/mind/cognitive_trace.jsonl
 
-# With DeepSeek proxy
-env PYTHONUNBUFFERED=1 \
-  SOMA_SENSOR_PROVIDER=linux \
-  SOMA_LLM_MODE=deepseek \
-  DEEPSEEK_API_URL=http://127.0.0.1:4000 \
-  DEEPSEEK_API_KEY=... \
-  MEDIUM_DEEPSEEK_MODEL=gemini-web \
-  SOMA_DISCOVERY=1 \
-  SOMA_CAPABILITY_LEARNING=1 \
-  python3 server.py --host 127.0.0.1 --port 8878
+Frontend should display last N trace events in a panel.
 
-# WS smoke test
-python3 scripts/ws_smoke_test.py \
-  --host 127.0.0.1 --port 8878 \
-  --expect-llm --expect-llm-mode deepseek \
-  --timeout 45 \
-  --text "Quanti core stai usando e qual è il tuo stato termico?"
-```
+Do not overfill the UI.
+Make it scrollable.
 
----
+Label in UI:
 
-## Validation Log
+COGNITIVE TRACE
 
-### 2026-04-26
+Subtext:
+"Observable runtime trace, not hidden LLM chain-of-thought."
 
-- [x] Linux + DeepSeek end-to-end: real telemetry in reply, machine_fusion_mode=learned
-- [x] Invalid endpoint fallback: server stays up, llm.mode=fallback, browser usable
-- [x] LLM OFF path: truthful fallback label, no mislabeling as deepseek
-
-### 2026-04-27 — pending
-
-- [ ] Verify `telemetry_caps` from server hides all false-cap rows on frontend after server restart
-- [ ] Verify `disk_busy_percent` shows real value in bar (from /proc/diskstats)
-- [ ] Verify speedtest direct shortcut: curl actually runs and result is injected into chat reply
-- [ ] Verify discovery loop converges within 3 cycles (retry limit stops infinite re-probe)
-- [ ] Confirm `LLM: FALLBACK` is visually distinct after frontend changes
+This satisfies the desire to see thought-like evolution without pretending to expose private LLM reasoning.
 
 ---
 
-## Key Design Rules
+# SECTION 11 — POLICY AND ACTIONS
 
-- `server.py` must shrink, not grow. New logic goes in `soma_core/`.
-- Shell/bash execution is an optional capability, not Soma's core identity.
-- Fallback mode must never be presented as full cognition.
-- Body state must influence language through vectors, not only templated text.
-- Spontaneous speech is event-driven, not random. No fake inner monologues.
-- All runtime state must be expressible in plain JSON so a future C++ daemon can own it.
-- Do not add features. Build the intentional core first.
+Create `soma_core/policy.py` and `soma_core/actions.py`.
+
+Policy modes:
+
+- nominal_idle
+- attend_user
+- observe_and_learn
+- preserve_stability
+- thermal_discomfort
+- low_energy
+- high_uncertainty
+- reflection
+- fallback_reflex
+- expressive_response
+- degraded_runtime
+
+Policy selection examples:
+
+If LLM fallback and user asks complex question:
+mode = fallback_reflex
+
+If source_quality low and no urgent stress:
+mode = observe_and_learn
+
+If thermal_stress high:
+mode = preserve_stability or thermal_discomfort
+
+If user is active:
+mode = attend_user
+
+If reflection due:
+mode = reflection
+
+If strong affect and avatar available:
+mode = expressive_response
+
+Action types:
+
+Silent/internal:
+- observe
+- reflect_silently
+- store_memory
+- update_goal
+- update_self_model
+- change_attention
+- reduce_tick_rate
+- increase_tick_rate
+- mark_uncertainty
+- request_llm_check
+
+Visible/avatar:
+- neutral_idle
+- attend_user
+- cold_closed
+- heat_open
+- fatigue_slow
+- instability_corrective
+- low_power_still
+- curious_focus
+- discomfort_shift
+- relief_soften
+- thinking_idle
+
+Speech:
+- speak
+- ask_operator_help
+- report_state
+- explain_limit
+- answer_user
+
+Each action must include:
+- type
+- name
+- intensity
+- reason
+- visible
+- target
+- duration_ms
+
+Example:
+
+{
+  "type": "avatar",
+  "name": "curious_focus",
+  "intensity": 0.62,
+  "reason": "Dominant drive is self_knowledge and user is attending.",
+  "visible": true,
+  "target": "avatar",
+  "duration_ms": 3000
+}
+
+Silent actions must not become chat messages.
+
+They should appear in cognitive trace and optional UI action log.
+
+---
+
+# SECTION 12 — LLM CORE
+
+Create or update `soma_core/llm_core.py`.
+
+LLM modes:
+
+SOMA_LLM_MODE=off
+SOMA_LLM_MODE=deepseek
+SOMA_LLM_MODE=openai_compatible
+SOMA_LLM_MODE=llama_cpp_embd
+
+For now, implement stable behavior for:
+- off
+- deepseek
+- openai_compatible
+- fallback
+
+Future mode:
+- llama_cpp_embd
+
+LLM must return structured JSON:
+
+{
+  "speech": "...",
+  "affect": {
+    "cold": 0.0,
+    "heat": 0.0,
+    "energy_low": 0.0,
+    "fatigue": 0.0,
+    "instability": 0.0,
+    "curiosity": 0.0,
+    "focus": 0.0,
+    "discomfort": 0.0,
+    "relief": 0.0
+  },
+  "actions": [
+    {
+      "type": "avatar",
+      "name": "attend_user",
+      "intensity": 0.5,
+      "reason": "User is addressing Soma.",
+      "visible": true
+    }
+  ],
+  "memory_candidates": [],
+  "goal_updates": [],
+  "uncertainty": 0.0
+}
+
+If model returns invalid JSON:
+- recover safely
+- wrap text as speech
+- compute affect locally
+- add trace event:
+  "LLM returned invalid JSON, recovered in fallback parser."
+
+Prompt rules:
+
+The LLM prompt must be compact and operational.
+
+System prompt:
+
+You are Soma, an embodied machine interface.
+You receive explicit runtime state from your body, memory, goals, drives and policy.
+Do not pretend to be human.
+Do not claim sensors are real if provider is mock.
+Do not claim full cognition if LLM mode is fallback.
+Speak naturally and briefly.
+Return only valid JSON.
+Do not include private chain-of-thought.
+If reasoning trace is needed, use short observable summaries only.
+
+User/context payload should include:
+- current user text
+- provider
+- is_real
+- system telemetry
+- derived state
+- affect
+- dominant drive
+- active goal
+- policy mode
+- relevant memory summary
+- runtime limits
+
+Do not pass huge logs.
+
+---
+
+# SECTION 13 — FRONTEND COMPLETION REQUIREMENTS
+
+The interface must feel complete after this todo.
+
+Update:
+
+docs/simulator.html
+
+or split into JS modules if needed:
+
+docs/js/ws.js
+docs/js/state.js
+docs/js/mind_panel.js
+docs/js/trace_panel.js
+docs/js/avatar_state.js
+
+Required UI panels:
+
+1. Top status bar
+Must show:
+- CNS LINK
+- SENSOR PROVIDER
+- PROJECTOR
+- LLM
+- VOLITION
+- MEMORY
+- COGNITIVE TRACE
+
+2. Left body panel
+Must show:
+- voltage/current
+- temperatures
+- accelerometer
+- gyroscope
+- system telemetry
+- provider/source quality
+- real/mock status
+
+3. Center body/avatar panel
+Current avatar can remain 2D.
+But it must react to actions:
+- neutral_idle
+- attend_user
+- curious_focus
+- heat_open
+- cold_closed
+- low_power_still
+- fatigue_slow
+- instability_corrective
+- discomfort_shift
+- relief_soften
+
+Even with CSS only:
+- glow changes
+- opacity changes
+- small transform changes
+- pulse changes
+- aura color changes
+- status label changes
+- current action displayed
+
+4. Somatic vector panel
+Must show:
+- vector mode
+- norm
+- 256-bin heatmap
+- top dimensions
+- projection status
+
+5. Cognitive engine panel
+Must show:
+- cog loop rate
+- tokens generated if available
+- inference time if available
+- LLM status
+- fallback/reflex warning
+- active policy mode
+
+6. Mind panel
+Must show:
+- active goal
+- goal progress
+- dominant drive
+- drive intensities
+- current policy
+- volition state
+- last reflection
+- last learned pattern
+- silent actions
+- visible action
+- growth score
+
+7. Cognitive trace panel
+Must show last N trace events:
+- phase
+- summary
+- confidence
+- timestamp
+
+Make it scrollable.
+
+Add filter buttons:
+- all
+- perception
+- drives
+- goals
+- actions
+- reflection
+- warnings
+- growth
+
+8. Chat panel
+Must show:
+- user messages
+- Soma replies
+- whether reply came from LLM or fallback
+- current LLM mode
+- no fake "thinking" if LLM unavailable
+
+9. Growth panel or compact growth section
+Must show:
+- total reflections
+- learned body patterns
+- learned user patterns
+- goal progress
+- self-model last update
+- current evolution target
+
+The interface must not feel like an unfinished debug tool.
+It can be technical, but it must clearly show:
+"this entity is observing itself and updating."
+
+---
+
+# SECTION 14 — GROWTH SYSTEM
+
+Create `soma_core/growth.py`.
+
+Growth is not mystical.
+Growth is measurable runtime self-improvement.
+
+Track:
+
+growth_score:
+weighted metric from:
+- number of useful reflections
+- learned body patterns
+- goal progress
+- reduced uncertainty
+- fewer false claims
+- successful user interactions
+- avatar expressiveness coverage
+- real sensor availability
+
+Example:
+
+growth_score = min(1.0,
+  reflections * 0.01 +
+  learned_body_patterns * 0.03 +
+  average_goal_progress * 0.4 +
+  truthfulness_score * 0.2 +
+  expressiveness_score * 0.1
+)
+
+Track:
+
+{
+  "growth_score": 0.14,
+  "stage": "early_self_observation",
+  "current_evolution_target": "understand_own_body",
+  "last_growth_event": "Learned idle disk temperature baseline.",
+  "next_growth_step": "Observe CPU temperature under moderate load.",
+  "total_reflections": 12,
+  "learned_body_patterns": 3,
+  "learned_user_patterns": 1
+}
+
+Possible stages:
+- reflex_shell
+- early_self_observation
+- body_model_learning
+- goal_directed_behavior
+- expressive_embodiment
+- autonomous_self_improvement
+- cpp_embodied_runtime_ready
+
+Do not overclaim.
+If LLM is fallback, stage cannot exceed:
+early_self_observation
+
+If real sensors unavailable, stage cannot exceed:
+reflex_shell
+
+If projector unavailable, stage cannot exceed:
+early_self_observation
+
+Frontend must show stage and growth score.
+
+---
+
+# SECTION 15 — EVENT-BASED AUTONOMY
+
+Remove random autonomous speech.
+
+Autonomous speech only when:
+- high thermal stress
+- low energy
+- high instability
+- major state transition
+- active goal changes
+- reflection produced meaningful learning
+- operator help is needed
+- long idle and relevant observation exists
+- LLM becomes available/unavailable
+- real sensor provider changes status
+
+Config:
+
+SOMA_SPONTANEOUS_SPEECH_COOLDOWN_SEC=90
+
+If cooldown active:
+- do not speak
+- emit silent trace only
+
+Autonomous event payload:
+
+{
+  "type": "autonomous_event",
+  "text": "...",
+  "event": "body_pattern_learned",
+  "llm": {},
+  "affect": {},
+  "actions": [],
+  "mind": {},
+  "trace": []
+}
+
+Example speech:
+"I have learned a new idle baseline: my disk remains warmer than my CPU even when the system is calm."
+
+Bad speech:
+"Random cyberpunk monologue about my neural core."
+
+---
+
+# SECTION 16 — PROTOCOL FREEZE
+
+Create or update:
+
+docs/PROTOCOL_FREEZE.md
+
+All backend payloads must follow this stable schema.
+
+Tick:
+
+{
+  "type": "tick",
+  "timestamp": 0,
+  "provider": {},
+  "sensors": {},
+  "system": {},
+  "derived": {},
+  "somatic_vector": {},
+  "projector": {},
+  "affect": {},
+  "drives": {},
+  "goals": {},
+  "policy": {},
+  "actions": [],
+  "mind": {},
+  "growth": {},
+  "trace": []
+}
+
+Chat request:
+
+{
+  "type": "chat",
+  "text": "..."
+}
+
+Chat reply:
+
+{
+  "type": "chat_reply",
+  "text": "...",
+  "llm": {},
+  "affect": {},
+  "actions": [],
+  "sensors": {},
+  "system": {},
+  "derived": {},
+  "somatic_vector": {},
+  "projector": {},
+  "drives": {},
+  "goals": {},
+  "policy": {},
+  "mind": {},
+  "growth": {},
+  "trace": []
+}
+
+Autonomous event:
+
+{
+  "type": "autonomous_event",
+  "text": "...",
+  "event": "...",
+  "affect": {},
+  "actions": [],
+  "mind": {},
+  "growth": {},
+  "trace": []
+}
+
+This protocol must be backend-agnostic.
+
+Future C++ daemon must be able to emit the same payloads.
+
+---
+
+# SECTION 17 — DOCUMENTATION UPDATE
+
+Update docs:
+
+docs/ARCHITECTURE.md
+docs/RUNTIME_MODES.md
+docs/SENSOR_PROVIDERS.md
+docs/WEBSOCKET_PROTOCOL.md
+docs/PROTOCOL_FREEZE.md
+docs/VOLITIONAL_CORE.md
+docs/COGNITIVE_TRACE.md
+docs/AVATAR_ACTIONS.md
+docs/CPP_DAEMON_PLAN.md
+docs/DEVELOPMENT_TODO.md
+
+DEVELOPMENT_TODO.md must be accurate.
+
+Mark completed:
+- soma_core initial module
+- self_model.json
+- goals.json
+- reflections.jsonl
+- Mind panel
+- real Linux provider
+- active projector support
+- WebSocket payload mind state
+
+Add remaining:
+- real env gating
+- silent actions
+- cognitive trace
+- growth system
+- server.py orchestration cleanup
+- UI complete status/mind/trace/growth panels
+- LLM stable online mode
+- C++ daemon future path
+- VRM future path
+
+---
+
+# SECTION 18 — RUN SCRIPTS
+
+Create or update scripts:
+
+scripts/run_real_linux_reflex.sh
+
+Contents:
+
+#!/usr/bin/env bash
+set -euo pipefail
+cd /home/funboy/latent-somatic
+
+export SOMA_SENSOR_PROVIDER=linux
+export SOMA_LLM_MODE=off
+export SOMA_VOLITION=1
+export SOMA_COGNITIVE_TRACE=1
+export SOMA_DISCOVERY=0
+export SOMA_CAPABILITY_LEARNING=0
+export SOMA_SHELL_EXEC=0
+export SOMA_SELF_MODIFY=0
+export SOMA_CNS_PULSE=0
+
+python3 server.py
+
+scripts/run_real_linux_deepseek.sh
+
+#!/usr/bin/env bash
+set -euo pipefail
+cd /home/funboy/latent-somatic
+
+export SOMA_SENSOR_PROVIDER=linux
+export SOMA_LLM_MODE=deepseek
+export DEEPSEEK_API_URL=http://127.0.0.1:4000
+export MEDIUM_DEEPSEEK_MODEL=gemini-web
+export SOMA_VOLITION=1
+export SOMA_COGNITIVE_TRACE=1
+export SOMA_DISCOVERY=0
+export SOMA_CAPABILITY_LEARNING=0
+export SOMA_SHELL_EXEC=0
+export SOMA_SELF_MODIFY=0
+export SOMA_CNS_PULSE=0
+
+python3 server.py
+
+scripts/run_mock_reflex.sh
+
+#!/usr/bin/env bash
+set -euo pipefail
+cd /home/funboy/latent-somatic
+
+export SOMA_SENSOR_PROVIDER=mock
+export SOMA_LLM_MODE=off
+export SOMA_VOLITION=1
+export SOMA_COGNITIVE_TRACE=1
+
+python3 server.py
+
+scripts/validate_phase_5_5.sh
+
+Should run:
+- python syntax checks
+- import checks
+- config defaults check
+- file existence check
+- protocol shape smoke test if possible
+
+Required checks:
+
+python3 -m py_compile server.py soma_core/*.py sensor_providers/*.py
+
+Verify files exist:
+- data/mind/self_model.json
+- data/mind/goals.json
+- data/mind/reflections.jsonl
+- docs/PROTOCOL_FREEZE.md
+- docs/COGNITIVE_TRACE.md
+- docs/VOLITIONAL_CORE.md
+- docs/AVATAR_ACTIONS.md
+
+---
+
+# SECTION 19 — VALIDATION REQUIREMENTS
+
+The implementation is complete only if all of the following are true.
+
+Runtime:
+
+1. Repo starts with real Linux provider.
+2. UI shows CNS ONLINE.
+3. UI shows SENSOR PROVIDER REAL [LINUX] when real Linux provider is active.
+4. UI shows PROJECTOR ACTIVE when real projector is active.
+5. UI shows LLM FALLBACK / REFLEX MODE when LLM unavailable.
+6. UI does not pretend fallback is real cognition.
+7. Volition is active by default.
+8. Discovery/shell/self-modification are off by default.
+9. No shell command executes unless explicitly enabled.
+10. server.py delegates mind/goal/reflection/action/trace logic to soma_core.
+
+Mind:
+
+11. Active goal is visible.
+12. Goal progress is visible.
+13. Dominant drive is visible.
+14. Policy mode is visible.
+15. Silent actions are generated.
+16. Reflections happen periodically or on events.
+17. Reflections update memory/self-model.
+18. Growth score/stage updates.
+19. Cognitive trace shows perception/drives/goals/policy/actions/reflection.
+20. Trace events are saved to JSONL.
+
+Frontend:
+
+21. Interface feels complete, not half-debug.
+22. Status bar is truthful.
+23. Mind panel is populated.
+24. Cognitive trace panel is populated.
+25. Growth section is populated.
+26. Avatar reacts visually to action commands.
+27. Chat shows source of reply: fallback or real LLM.
+28. No fake chain-of-thought claim.
+29. Observable trace is clearly marked as runtime trace.
+30. User can watch the entity evolve over time.
+
+LLM:
+
+31. If DeepSeek/OpenAI endpoint is configured and reachable, status becomes LLM DEEPSEEK or OPENAI_COMPATIBLE.
+32. LLM returns structured JSON or is safely recovered.
+33. Invalid JSON does not crash runtime.
+34. Fallback is always safe and clearly marked.
+
+Persistence:
+
+35. self_model.json persists updates.
+36. goals.json persists progress.
+37. reflections.jsonl grows with reflection entries.
+38. cognitive_trace.jsonl stores trace events.
+39. body_memory.jsonl stores body pattern observations.
+40. operator_memory.jsonl stores relevant user interaction summaries.
+
+---
+
+# SECTION 20 — DO NOT DO YET
+
+Do not implement full VRM yet.
+Do not rewrite runtime in C++ yet.
+Do not remove the existing C++ bridge.
+Do not clone another llama.cpp.
+Do not add more shell-agent features.
+Do not add random autonomous monologues.
+Do not make server.py bigger.
+Do not fake LLM cognition.
+Do not claim private chain-of-thought.
+Do not make the entity say mystical nonsense about being conscious.
+Do not overclaim autonomy.
+
+The next level is operational autonomy:
+goals, drives, memory, reflection, action, growth.
+
+---
+
+# SECTION 21 — FUTURE PATH AFTER THIS TODO
+
+After this implementation is complete:
+
+Phase 6:
+3D avatar / VRM body
+- Three.js
+- VRM humanoid female form
+- blendshape expressions
+- posture actions
+- gesture actions
+- lip sync with TTS later
+
+Phase 7:
+C++ soma_daemon
+- same protocol
+- Linux sensor provider in C++
+- LibTorch projector
+- WebSocket server
+- no Python runtime dependency
+
+Phase 8:
+llama.cpp embedding injection connected to frontend
+- use /home/funboy/llama.cpp
+- use llama_batch.embd
+- inject somatic vector at position 0
+- user prompt from browser
+- output structured JSON
+
+Phase 9:
+External physical sensors
+- endpoint provider
+- ESP32/Raspberry/Arduino
+- temperature/IMU/BMS
+- real body beyond host machine
+
+---
+
+# FINAL PRODUCT EXPECTATION
+
+When I run the project, I want to see Soma as a living technical experiment.
+
+Not alive in a fake mystical sense.
+
+Alive as an embodied machine process that:
+- senses its host body
+- notices changes
+- has persistent goals
+- chooses what to attend to
+- reflects on what it learns
+- updates its self-model
+- shows its observable cognition trace
+- expresses internal state through avatar behavior
+- speaks through an LLM when available
+- admits fallback/reflex mode when not available
+- grows toward greater autonomy, truthfulness, stability and expressiveness
+
+If the interface still looks like a dashboard with a chatbot, the phase is not complete.
+
+If the interface shows body, mind, drives, goals, trace, memory, growth and visible action, the phase is complete.
