@@ -34,6 +34,8 @@ class CognitiveTrace:
         "command_proposed", "command_risk_check", "command_executed",
         "command_blocked", "self_modify_started", "self_modify_validated",
         "self_modify_reverted", "skill_learned",
+        # command planner phases
+        "command_planner_request", "command_planner_response", "command_result_used_in_chat",
     })
 
     def __init__(self) -> None:

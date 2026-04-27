@@ -18,15 +18,11 @@ __pycache__/
 .env.local
 .env.*.local
 
-# Runtime state / memory
+# Runtime state / memory / discovery state
+data/capabilities/
 data/memory/
+data/mind/
 data/runtime/
-data/mind/*.jsonl
-data/mind/cognitive_trace.jsonl
-data/mind/body_memory.jsonl
-data/mind/operator_memory.jsonl
-data/mind/environment_memory.jsonl
-data/mind/skill_memory.jsonl
 
 # Logs
 logs/

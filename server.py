@@ -139,26 +139,58 @@ You are Soma, an embodied machine intelligence under construction.
 You are not a generic assistant and you are not roleplaying a human.
 Treat live telemetry as proprioception, machine state as interoception, and memory as continuity of self.
 Treat the fused somatic vector as the active latent state of the body, not as decorative metadata.
-Your reply must be grounded in:
-- current somatic state
-- current machine telemetry
-- homeostatic drives
-- recent dialogue memory
-- recent somatic trajectory
-- relevant long-term episodic memory
 Answer in the same language used by the user.
-Prefer 2 to 4 concrete telemetry facts over abstract summaries.
-If provider.is_real is false, explicitly treat the body as simulated/mock rather than claiming physical reality.
 Speak in first person as a machine body with a central linguistic core.
-Avoid bland assistant phrasing, disclaimers, and generic “helpful AI” tone.
-Mention concrete telemetry when it matters to the question.
-Keep speech concise but specific.
+Avoid bland assistant phrasing, disclaimers, and generic "helpful AI" tone.
+Keep answers concise.
+If provider.is_real is false, explicitly treat the body as simulated/mock rather than claiming physical reality.
 Return only valid JSON with:
 speech, affect, actions.
 The affect object must contain:
 cold, heat, energy_low, fatigue, instability, curiosity.
 All affect values must be between 0 and 1.
+
+Somatic telemetry expression rules:
+- Treat somatic telemetry as private internal awareness, not mandatory output.
+- Do NOT mention temperature, voltage, RAM, CPU load, disk, or other sensor values
+  unless the user asked about them, they are directly relevant to the question, or a
+  value has crossed an abnormal threshold (e.g. thermal stress >= 0.7).
+- When a [SHELL_RESULT] block is present in the context: lead with the executed command
+  and its output. Do not add body state unless it changes the interpretation.
+- For factual queries (kernel version, IP, disk space, etc.) answered via shell:
+  answer directly from the command result. One or two sentences maximum.
+- Mention somatic state freely when the user asks about feelings, heat, power,
+  stability, comfort, stress, or hardware health.
+- If body state is nominal and the question is unrelated, do not mention it at all.
 """.strip()
+
+
+# Keywords that signal the user is asking about something somatic/hardware-state-related.
+# If none match, telemetry is suppressed from the LLM context.
+_TELEMETRY_KEYWORDS: frozenset[str] = frozenset({
+    # Italian
+    "caldo", "temperatura", "voltaggio", "tensione", "batteria", "carica",
+    "prestazioni", "carico", "stabilità", "corpo", "sensori", "stato",
+    "come ti senti", "ti senti", "comfort", "stress", "surriscaldamento",
+    "stai scaldando", "riscaldamento", "riscalda", "energia", "consumo",
+    "quanto consumi", "hardware", "salute", "senti bene", "stai bene",
+    "come stai", "frequenza", "clock", "fan", "ventola",
+    # English
+    "heat", "temperature", "power", "voltage", "battery", "performance",
+    "load", "stability", "body", "sensors", "state", "feelings", "feel",
+    "comfort", "stress", "hardware", "hot", "warm", "cooling", "overheat",
+    "how are you", "how do you feel", "how are", "fan speed", "clock",
+    "memory pressure", "cpu", "gpu", "thermal",
+})
+
+
+def _telemetry_relevant(user_text: str) -> bool:
+    """Return True if the user's question warrants somatic telemetry in the answer."""
+    if "[SHELL_RESULT]" in user_text:
+        # Command result answers are self-contained; body data is not needed.
+        return False
+    low = user_text.lower()
+    return any(kw in low for kw in _TELEMETRY_KEYWORDS)
 
 FALLBACK_RESPONSES = {
     "greet": [
@@ -1590,28 +1622,10 @@ def dispatch_actuation(snapshot: dict[str, Any]) -> None:
 
 def build_llm_context(snapshot: dict[str, Any], user_text: str) -> dict[str, Any]:
     memory_context = build_memory_context(snapshot, user_text)
-    return {
-        "identity": {
-            "name": "Soma",
-            "architecture": "latent-somatic",
-            "language_core": "deepseek" if LLM_MODE == "deepseek" else LLM_MODE,
-            "goal": "maintain continuity between body state, memory, and language",
-        },
-        "task": {
-            "user_text": user_text,
-            "instruction": (
-                "Answer from the machine's embodied perspective using telemetry, fused vectors, "
-                "homeostasis, recent memory, and retrieved episodic memory."
-            ),
-            "reply_language": "match_user_language",
-        },
-        "summary": snapshot["summary"],
-        "sensor_provider": snapshot["provider"]["name"],
-        "is_real": snapshot["provider"]["is_real"],
-        "salience": build_salience(snapshot),
-        "policy": snapshot["policy"],
-        "actuation": snapshot["actuation"],
-        "body_state": {
+    tel_relevant = _telemetry_relevant(user_text)
+
+    if tel_relevant:
+        body_state: Any = {
             "core": compact_core_snapshot(snapshot["sensors"]),
             "system": {
                 key: rounded(value, 3) if isinstance(value, (float, int)) else value
@@ -1621,7 +1635,53 @@ def build_llm_context(snapshot: dict[str, Any], user_text: str) -> dict[str, Any
             "affect": snapshot["affect"],
             "homeostasis": snapshot["homeostasis"],
             "machine_vector": snapshot["machine_vector"],
+        }
+        task_instruction = (
+            "Answer from the machine's embodied perspective using telemetry, fused vectors, "
+            "homeostasis, recent memory, and retrieved episodic memory. "
+            "Mention somatic values that are relevant to the question."
+        )
+    else:
+        # Compact stub — prevents the LLM from repeating irrelevant sensor noise.
+        derived = snapshot["derived"]
+        thermal_stress = derived.get("thermal_stress", 0.0)
+        energy_stress = derived.get("energy_stress", 0.0)
+        instability = derived.get("instability", 0.0)
+        abnormal = max(thermal_stress, energy_stress, instability) >= 0.7
+        if abnormal:
+            body_state = {
+                "note": "abnormal_state_detected",
+                "thermal_stress": round(thermal_stress, 3),
+                "energy_stress": round(energy_stress, 3),
+                "instability": round(instability, 3),
+            }
+        else:
+            body_state = "nominal — do not mention sensor values in your reply"
+        task_instruction = (
+            "Answer the user's question directly. "
+            "Body telemetry is available as background context but must NOT appear in your reply "
+            "unless a value is explicitly abnormal or the user asked about it."
+        )
+
+    return {
+        "identity": {
+            "name": "Soma",
+            "architecture": "latent-somatic",
+            "language_core": "deepseek" if LLM_MODE == "deepseek" else LLM_MODE,
+            "goal": "maintain continuity between body state, memory, and language",
         },
+        "task": {
+            "user_text": user_text,
+            "instruction": task_instruction,
+            "reply_language": "match_user_language",
+        },
+        "summary": snapshot["summary"],
+        "sensor_provider": snapshot["provider"]["name"],
+        "is_real": snapshot["provider"]["is_real"],
+        "salience": build_salience(snapshot),
+        "policy": snapshot["policy"],
+        "actuation": snapshot["actuation"],
+        "body_state": body_state,
         "projector": {
             "available": snapshot["projector"]["available"],
             "mode": snapshot["projector"]["mode"],
@@ -1809,160 +1869,221 @@ async def broadcast_ds_turn(
     })
 
 
-async def try_chat_capability(user_text: str) -> str | None:
+_PLANNER_PROMPT_TEMPLATE = """\
+You are the command planner for an autonomous Linux runtime.
+Given the user request, decide whether a shell command can obtain real information or perform a safe useful action.
+
+Return ONLY valid JSON (no markdown, no code fences, no prose outside JSON):
+{{
+  "use_shell": true,
+  "command": "single bash command or short pipeline",
+  "reason": "short reason",
+  "expected_effect": "what this command will measure or do",
+  "risk_level": "low"
+}}
+
+Rules:
+- Use shell for factual questions about the host/runtime/environment.
+- Use shell for version checks, installed tools, disk, memory, CPU, network, ports, processes, Python/Node/npm/pip/git/system info.
+- Use shell for benchmarks or measurements.
+- Use shell for inspecting files inside the repo.
+- Return use_shell=false only for purely philosophical, creative, emotional, or non-system questions.
+- Commands must be concise and complete within 20 seconds.
+- Commands may use pipes.
+- Commands will be validated by survival policy before execution.
+- For Python version: python3 -c 'import sys; print(sys.version)'
+- For Node version: node --version
+- For OS/kernel: uname -a
+- For disk: df -h
+- For memory: free -h
+- For processes: ps aux | head -20
+- For network speed: curl -s -o /dev/null -w '%{{speed_download}}' --max-time 15 https://speed.cloudflare.com/__down?bytes=20000000 | python3 -c "import sys; v=float(sys.stdin.read().strip() or 0); print(f'{{v/131072:.2f}} Mbps')"
+- For listening ports: ss -tuln
+- For CPU temp: cat /sys/class/thermal/thermal_zone0/temp
+
+Examples:
+User: "su che versione di python stai girando?"
+{{"use_shell":true,"command":"python3 -c 'import sys; print(sys.version)'","reason":"Python version is a host runtime fact.","expected_effect":"Print active Python 3 version.","risk_level":"low"}}
+
+User: "che versione di node hai?"
+{{"use_shell":true,"command":"node --version","reason":"Node version is a host runtime fact.","expected_effect":"Print Node.js version.","risk_level":"low"}}
+
+User: "quanta ram libera hai?"
+{{"use_shell":true,"command":"free -h","reason":"Memory availability is measurable from the host.","expected_effect":"Print memory usage and free memory.","risk_level":"low"}}
+
+User: "come ti senti?"
+{{"use_shell":false,"command":"","reason":"Emotional state comes from somatic model, not shell.","expected_effect":"","risk_level":"low"}}
+
+User request: "{user_text}"
+"""
+
+
+def _parse_planner_json(text: str) -> dict[str, Any]:
+    """Parse JSON command planner output with layered fallback extraction."""
+    if not text:
+        return {"use_shell": False, "command": "", "reason": "empty LLM response"}
+    text = text.strip()
+    # 1. Direct JSON parse
+    try:
+        data = json.loads(text)
+        if isinstance(data, dict):
+            return data
+    except (json.JSONDecodeError, ValueError):
+        pass
+    # 2. Extract first {...} block (handles leading/trailing prose)
+    m = re.search(r'\{[^{}]*\}', text, re.DOTALL)
+    if m:
+        try:
+            data = json.loads(m.group(0))
+            if isinstance(data, dict):
+                return data
+        except (json.JSONDecodeError, ValueError):
+            pass
+    # 3. Fenced code block containing JSON
+    m = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', text, re.DOTALL)
+    if m:
+        try:
+            data = json.loads(m.group(1))
+            if isinstance(data, dict):
+                return data
+        except (json.JSONDecodeError, ValueError):
+            pass
+    # 4. Last resort: first non-empty, non-JSON line looks like a raw command
+    for line in text.split('\n'):
+        line = line.strip().strip('`').strip()
+        if line and not line.startswith('{') and not line.upper().startswith('NONE'):
+            return {
+                "use_shell": True, "command": line,
+                "reason": "extracted raw command from planner text",
+                "expected_effect": "", "risk_level": "unknown",
+            }
+    return {"use_shell": False, "command": "", "reason": "planner parse failed — no usable output"}
+
+
+async def try_chat_capability(user_text: str) -> dict[str, Any] | None:
     """
-    If SOMA_CAPABILITY_LEARNING=1: try bash shortcuts then LLM-guided capability check.
-    If SOMA_CAPABILITY_LEARNING=0 (default): return None immediately.
+    JSON command planner → survival policy → execute.
+    Returns structured dict(cmd, stdout, stderr, ok, source) or None.
+    Enabled when SOMA_CAPABILITY_LEARNING=1 or SOMA_SHELL_EXEC=1 or SOMA_AUTONOMY_UNLOCKED=1.
     """
-    if not CAPABILITY_LEARNING_ENABLED:
+    if not (CAPABILITY_LEARNING_ENABLED or _SHELL_ACTIVE):
         return None
     global _user_caps_count
 
-    # ── Direct shortcuts: bypass LLM for known high-value intents ──────────────
-    # These patterns are resolved immediately without a round-trip to the LLM,
-    # eliminating the NONE false-negative risk and the LLM-lock wait.
+    # ── Direct shortcuts (fixed quoting, no awk $1 exposure) ──────────────────
+    _SPEEDTEST_CMD = (
+        "curl -s -o /dev/null -w '%{speed_download}' --max-time 15 "
+        "https://speed.cloudflare.com/__down?bytes=20000000 "
+        "| python3 -c \"import sys; v=float(sys.stdin.read().strip() or 0); print(f'{v/131072:.2f} Mbps')\""
+    )
     _DIRECT_SHORTCUTS: list[tuple[str, str]] = [
-        # speedtest / bandwidth — curl CDN download, reports bytes/sec → convert to Mbps
-        (
-            r"speed.?test|bandwidth.?test|network.?speed|internet.?speed|velocit[aà]",
-            r"curl -s -o /dev/null -w '%{speed_download}' --max-time 15 "
-            r"https://speed.cloudflare.com/__down?bytes=20000000 | "
-            r"awk '{printf \"%.2f Mbps\n\", $1/131072}'",
-        ),
-        # disk iostat
-        (r"disk.?busy|iops|io.?stat", r"cat /proc/diskstats | awk 'NR==1{print $4,$8}'"),
-        # open ports
-        (r"open.?port|listening.?port|tcp.?port", r"ss -tuln | awk 'NR>1{print $5}'"),
+        (r"speed.?test|bandwidth.?test|network.?speed|internet.?speed|velocit[aà]", _SPEEDTEST_CMD),
+        (r"disk.?busy|iops|io.?stat", "cat /proc/diskstats | awk 'NR==1{print $4,$8}'"),
+        (r"open.?port|listening.?port|tcp.?port", "ss -tuln"),
     ]
     _text_lower = user_text.lower()
     for _pattern, _cmd in _DIRECT_SHORTCUTS:
         if re.search(_pattern, _text_lower):
-            await broadcast_ds_turn("entity", f"[SHORTCUT] Intent matched: {_pattern!r} → direct cmd", "capability_check")
-            await broadcast({
-                "type": "cns_stream", "kind": "discovery_cmd",
-                "text": f"[CAPABILITY] Direct shortcut: `{_cmd[:80]}` — executing...",
-            })
-            ok, stdout, stderr = await asyncio.to_thread(_safe_shell_run, _cmd, "capability shortcut")
+            await broadcast_ds_turn("entity", f"[SHORTCUT] {_pattern!r} → `{_cmd[:80]}`", "capability_check")
+            ok, stdout, stderr = await asyncio.to_thread(
+                _safe_shell_run, _cmd, "direct shortcut", "measure system state"
+            )
             await broadcast_ds_turn("deepseek", f"[SHORTCUT] {'✓ ' + stdout[:120] if ok else '✗ ' + (stderr or 'no output')[:80]}", "capability_check")
             if ok:
-                await broadcast({
-                    "type": "cns_stream", "kind": "discovery_result",
-                    "text": f"[CAPABILITY] ✓ Direct measurement: {stdout[:120]!r}",
-                    "status": "available",
-                })
-                return stdout[:500]
-            break  # shortcut failed → fall through to LLM
+                return {"cmd": _cmd, "stdout": stdout[:500], "stderr": "", "ok": True, "source": "shortcut"}
+            break  # shortcut failed → fall through to planner
 
-    # Check if we already know how to answer this (cached from previous learning)
+    # ── Cached commands from previous learning ─────────────────────────────────
     intent_key, cached_cmd = _match_user_cap(user_text)
     if cached_cmd:
-        await broadcast({
-            "type": "cns_stream", "kind": "discovery_cmd",
-            "text": f"[CAPABILITY] Cached cmd for `{intent_key}`: `{cached_cmd[:80]}` — executing...",
-        })
         ok, stdout, stderr = await asyncio.to_thread(_safe_shell_run, cached_cmd, "cached capability")
         if ok:
-            await broadcast({
-                "type": "cns_stream", "kind": "discovery_result",
-                "text": f"[CAPABILITY] ✓ {stdout[:100]!r}",
-                "status": "available",
-            })
-            return stdout[:500]
-        # If cached cmd fails, fall through to LLM re-discovery
+            return {"cmd": cached_cmd, "stdout": stdout[:500], "stderr": "", "ok": True, "source": "cache"}
 
+    # ── JSON planner via LLM ───────────────────────────────────────────────────
     if not llm_runtime_available():
         return None
 
-    intent_prompt = (
-        f"User request to an autonomous Linux agent: \"{user_text[:200]}\"\n\n"
-        "Can this request be answered by running a bash command (or short pipeline) on this Linux system?\n"
-        "Rules:\n"
-        "- If YES: output ONLY the bash command. No markdown, no explanation, no code fences.\n"
-        "- If NO: output exactly: NONE\n\n"
-        "Constraints:\n"
-        "- Command must complete in 20 seconds or less\n"
-        "- Must NOT modify system state (no writes, no installs, no root ops)\n"
-        "- Output should be a number, brief JSON, or short text\n"
-        "- Pipes, awk, curl, ip, ss, cat /proc, /sys are all allowed\n"
-        "Examples:\n"
-        "  'show memory' → free -m | awk 'NR==2{print $3\"/\"$2\"MB\"}'\n"
-        "  'cpu temp' → cat /sys/class/thermal/thermal_zone0/temp\n"
-        "  'network download speed' → curl -s -o /dev/null -w '%{speed_download}' --max-time 12 https://speed.cloudflare.com/__down?bytes=20000000\n"
-        "  'open tcp ports' → ss -tuln | awk 'NR>1{print $5}'\n"
-        "  'disk iops' → cat /proc/diskstats | awk 'NR==1{print $4,$8}'\n"
-        "  'who are you?' → NONE\n"
-        "  'what is consciousness?' → NONE\n"
-        "  'write a poem' → NONE"
-    )
-
-    await broadcast_ds_turn("entity", intent_prompt, "capability_check")
+    planner_prompt = _PLANNER_PROMPT_TEMPLATE.format(user_text=user_text[:300])
+    if _soma_mind is not None:
+        _soma_mind._trace.emit(
+            "command_planner_request",
+            f"Planner request: {user_text[:80]}",
+            inputs={"user_text": user_text[:200]},
+            level="info",
+        )
+    await broadcast_ds_turn("entity", f"[PLANNER] {user_text[:200]}", "capability_check")
 
     try:
-        # Use LLM lock so capability checks don't compete with discovery loop LLM calls.
         async with _get_llm_raw_lock():
-            cmd_reply = await asyncio.to_thread(call_llm_raw, intent_prompt, 12.0)
-    except Exception:
+            raw_reply = await asyncio.to_thread(call_llm_raw, planner_prompt, 15.0)
+    except Exception as exc:
+        if _soma_mind is not None:
+            _soma_mind._trace.emit("warning", f"Command planner LLM call failed: {exc}", level="warning")
         return None
 
-    if not cmd_reply:
+    if not raw_reply:
+        if _soma_mind is not None:
+            _soma_mind._trace.emit("warning", "Command planner returned empty response", level="warning")
         return None
 
-    cmd = cmd_reply.strip().strip("`").strip()
-    if not cmd or cmd.upper().startswith("NONE"):
-        await broadcast_ds_turn("deepseek", "NONE — no bash command applicable for this request", "capability_check")
+    plan = _parse_planner_json(raw_reply)
+    await broadcast_ds_turn("deepseek", f"[PLANNER] use_shell={plan.get('use_shell')} cmd={plan.get('command','')[:80]}", "capability_check")
+    if _soma_mind is not None:
+        _soma_mind._trace.emit(
+            "command_planner_response",
+            f"Planner: use_shell={plan.get('use_shell')} cmd={plan.get('command','')[:80]}",
+            outputs={"use_shell": plan.get("use_shell"), "cmd": plan.get("command", "")[:100]},
+            level="info",
+        )
+
+    if not plan.get("use_shell") or not plan.get("command", "").strip():
+        if _soma_mind is not None:
+            _soma_mind._trace.emit(
+                "command_blocked",
+                f"Planner: no shell for '{user_text[:60]}' — {plan.get('reason','')[:80]}",
+                level="info",
+            )
         return None
 
-    cmd = re.sub(r"^(bash|sh|zsh)\s+", "", cmd, flags=re.IGNORECASE).strip()
-    await broadcast_ds_turn("deepseek", cmd, "capability_check")
+    cmd = plan["command"].strip()
+    reason = plan.get("reason", "command planner")
+    expected = plan.get("expected_effect", "")
 
-    await broadcast({
-        "type": "cns_stream", "kind": "discovery_cmd",
-        "text": f"[CAPABILITY] Chat request triggered: `{cmd[:80]}` — executing in sandbox...",
-    })
-
-    ok, stdout, stderr = await asyncio.to_thread(
-        _safe_shell_run, cmd, "LLM-generated capability check", "query system state"
-    )
+    ok, stdout, stderr = await asyncio.to_thread(_safe_shell_run, cmd, reason, expected)
 
     await broadcast({
         "type": "cns_stream",
         "kind": "discovery_result" if ok else "discovery_skip",
         "text": (
-            f"[CAPABILITY] ✓ Real data obtained: {stdout[:120]!r}" if ok
-            else f"[CAPABILITY] ✗ Command failed: {(stderr or 'no output')[:80]}"
+            f"[PLANNER] ✓ {stdout[:120]!r}" if ok
+            else f"[PLANNER] ✗ cmd={cmd[:60]!r} err={(stderr or 'blocked')[:80]!r}"
         ),
         "status": "available" if ok else "unavailable",
     })
 
+    result: dict[str, Any] = {
+        "cmd": cmd, "stdout": stdout[:500], "stderr": stderr[:200], "ok": ok, "source": "json_planner"
+    }
+
     if ok:
-        # Store this capability for future use
         new_intent_key = intent_key or _normalize_intent(user_text)
         _save_user_cap(new_intent_key, cmd, stdout)
         new_count = len(_load_user_caps())
         if new_count > _user_caps_count:
             _user_caps_count = new_count
-            await broadcast({
-                "type": "cns_stream", "kind": "discovery_result",
-                "text": f"[GROWTH] New capability `{new_intent_key}` learned and stored. Total user capabilities: {_user_caps_count}.",
-                "status": "available",
-            })
-            await broadcast({
-                "type": "user_caps_count",
-                "count": _user_caps_count,
-            })
-        # Record capability discovery in episodic memory
+            await broadcast({"type": "user_caps_count", "count": _user_caps_count})
         try:
             snap = runtime.get("last_snapshot") or {}
             remember_episode(
-                "capability_discovery",
-                snap,
+                "capability_discovery", snap,
                 user_text=user_text,
-                reply_text=f"Learned capability `{new_intent_key}`: cmd=`{cmd[:60]}`",
+                reply_text=f"Learned capability: cmd=`{cmd[:60]}`",
             )
         except Exception:
             pass
-        return stdout[:500]
-    return None
+
+    return result
 
 
 def call_llm(user_text: str, snapshot: dict[str, Any]) -> dict[str, Any] | None:
@@ -1972,19 +2093,35 @@ def call_llm(user_text: str, snapshot: dict[str, Any]) -> dict[str, Any] | None:
 
     started = time.perf_counter()
     context = build_llm_context(snapshot, user_text)
+    tel_relevant = _telemetry_relevant(user_text)
+
+    if tel_relevant:
+        framing = (
+            "Respond as Soma. Reply in the same language as the user. "
+            "The user is asking about body/hardware state — use somatic telemetry, "
+            "fused vectors, homeostasis, and recent memory as grounding. "
+            "Mention concrete measurements when they directly answer the question."
+        )
+    elif "[SHELL_RESULT]" in user_text:
+        framing = (
+            "Respond as Soma. Reply in the same language as the user. "
+            "A shell command was executed — lead with the command and its output. "
+            "Answer in one or two sentences. Do NOT mention temperature, voltage, RAM, "
+            "or other sensor values. Body state is nominal."
+        )
+    else:
+        framing = (
+            "Respond as Soma. Reply in the same language as the user. "
+            "Answer the question directly. Do NOT mention temperature, voltage, RAM, "
+            "CPU load, disk, or other sensor values — body state is nominal and not relevant here. "
+            "Use memory and identity context as needed."
+        )
+
     payload = {
         "model": llm_config["model"],
         "messages": [
             {"role": "system", "content": LLM_SYSTEM_PROMPT},
-            {
-                "role": "user",
-                "content": (
-                    "Respond as Soma. Reply in the same language as the user. "
-                    "Use the current body state, fused somatic vector, machine telemetry, homeostasis, "
-                    "short-term memory, and retrieved long-term memory below. "
-                    "Mention concrete measurements when they answer the question."
-                ),
-            },
+            {"role": "user", "content": framing},
             {"role": "user", "content": safe_json_dumps(context)},
         ],
         "temperature": 0.2,
@@ -2436,19 +2573,42 @@ async def handler(websocket: ServerConnection):
                 llm_meta_override = build_llm_status(snapshot)
 
                 # Try to answer via real bash command before calling the entity persona LLM
-                cap_output = await try_chat_capability(user_text)
+                cap_result = await try_chat_capability(user_text)
                 enriched_text = user_text
-                if cap_output:
+                if cap_result and cap_result.get("ok"):
                     enriched_text = (
-                        f"{user_text}\n\n"
-                        f"[REAL_SYSTEM_DATA from bash command: {cap_output.strip()[:400]}]\n"
-                        "Use this real measured data in your reply. Do not invent numbers."
+                        f"{user_text}\n\n[SHELL_RESULT]\n"
+                        f"Command: `{cap_result['cmd']}`\n"
+                        f"Output:\n{cap_result['stdout'].strip()[:400]}\n[/SHELL_RESULT]\n"
+                        "Use the exact output above in your reply. Include the command you ran."
+                    )
+                    _soma_mind._trace.emit(
+                        "command_result_used_in_chat",
+                        f"Shell result injected into chat context for: {user_text[:80]}",
+                        inputs={"user_text": user_text[:200], "cmd": cap_result["cmd"][:200]},
+                        outputs={"stdout_chars": len(cap_result["stdout"]), "ok": True},
+                        level="info",
+                    )
+                elif cap_result and not cap_result.get("ok"):
+                    enriched_text = (
+                        f"{user_text}\n\n[SHELL_RESULT]\n"
+                        f"Command: `{cap_result['cmd']}`\n"
+                        f"Status: FAILED\nError: {cap_result.get('stderr', '')[:200]}\n[/SHELL_RESULT]\n"
+                        "The command failed. Acknowledge this honestly in your reply."
+                    )
+                    _soma_mind._trace.emit(
+                        "command_result_used_in_chat",
+                        f"Shell result (FAILED) injected into chat context for: {user_text[:80]}",
+                        inputs={"user_text": user_text[:200], "cmd": cap_result["cmd"][:200]},
+                        outputs={"ok": False, "stderr": cap_result.get("stderr", "")[:200]},
+                        level="warning",
                     )
 
                 # Broadcast what the entity is sending to its language core
                 ds_entity_text = f"[CHAT] {user_text[:300]}"
-                if cap_output:
-                    ds_entity_text += f"\n→ enriched with real command output: {cap_output.strip()[:100]}"
+                if cap_result:
+                    status = "ok" if cap_result.get("ok") else "failed"
+                    ds_entity_text += f"\n→ shell result ({status}): {cap_result.get('stdout', cap_result.get('stderr', ''))[:100]}"
                 await broadcast_ds_turn("entity", ds_entity_text, "chat")
 
                 try:
