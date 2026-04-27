@@ -40,7 +40,11 @@ body{background:var(--bg);color:var(--text);font-family:var(--mono);font-size:12
 a.tb-link{text-decoration:none}
 
 /* ── main layout ── */
-#main{flex:1;display:grid;grid-template-columns:260px 1fr 300px;grid-template-rows:1fr;overflow:hidden}
+#main{flex:1;display:grid;grid-template-columns:240px 1fr 250px 250px;grid-template-rows:1fr;overflow:hidden}
+#sensor-panel{grid-column:1}
+#body-panel{grid-column:2;overflow:hidden}
+#cog-panel{grid-column:3;border-right:1px solid var(--border)}
+#ds-panel{grid-column:4;overflow:hidden}
 
 /* ── panels ── */
 .panel{border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
@@ -111,7 +115,7 @@ a.tb-link{text-decoration:none}
 /* ── right: cognitive panel ── */
 #cog-panel{display:flex;flex-direction:column}
 /* status cards */
-.stat-cards{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--border);flex-shrink:0}
+.stat-cards{display:grid;grid-template-columns:1fr 1fr 1fr;gap:1px;background:var(--border);flex-shrink:0}
 .stat-card{background:var(--bg2);padding:12px 14px}
 .sc-val{font-size:20px;font-family:var(--head);letter-spacing:-.02em}
 .sc-lbl{font-size:9px;color:var(--text3);letter-spacing:.1em;text-transform:uppercase;margin-top:3px}
@@ -134,6 +138,28 @@ a.tb-link{text-decoration:none}
 .llm-entry.warn .llm-text{color:var(--orange)}
 .llm-entry.critical .llm-text{color:var(--red)}
 .llm-cursor{display:inline-block;width:7px;height:12px;background:var(--cyan);vertical-align:middle;animation:blink 1s infinite}
+.llm-entry.ok .llm-text{color:var(--green)}
+.llm-entry.discovery .llm-text{color:var(--cyan)}
+.llm-entry.cmd .llm-text{color:var(--purple2);word-break:break-all}
+.llm-entry.skip .llm-ts,.llm-entry.skip .llm-state,.llm-entry.skip .llm-text{opacity:0.45}
+.bg-row.probing .bg-val{color:var(--cyan);font-style:italic}
+.bg-row.unavailable{display:none}
+
+/* ── DeepSeek internal dialogue panel ── */
+#ds-panel{display:flex;flex-direction:column;min-width:0;border-left:1px solid var(--border);overflow:hidden}
+#ds-feed{flex:1;overflow-y:auto;padding:10px;display:flex;flex-direction:column;gap:8px;min-height:0}
+.ds-turn{padding:8px 10px;border-radius:4px;font-size:10.5px;line-height:1.5;max-width:94%;word-break:break-word}
+.ds-entity{background:rgba(0,207,255,.06);border:1px solid rgba(0,207,255,.2);align-self:flex-start}
+.ds-deepseek{background:rgba(112,64,232,.09);border:1px solid rgba(112,64,232,.22);align-self:flex-end}
+.ds-sys{background:transparent;border:none;color:var(--text3);font-size:9.5px;text-align:center;max-width:100%}
+.ds-turn-label{font-size:9px;letter-spacing:.08em;margin-bottom:4px;text-transform:uppercase}
+.ds-entity .ds-turn-label{color:var(--cyan)}
+.ds-deepseek .ds-turn-label{color:var(--purple2)}
+.ds-turn-purpose{font-size:9px;color:var(--text3);margin-top:4px;font-style:italic}
+.ds-purpose-badge{display:inline-block;padding:1px 6px;border-radius:2px;font-size:8px;letter-spacing:.08em;text-transform:uppercase;margin-left:4px}
+.ds-badge-discovery{background:rgba(0,207,255,.12);color:var(--cyan)}
+.ds-badge-capability_check{background:rgba(234,179,8,.12);color:var(--yellow)}
+.ds-badge-chat{background:rgba(112,64,232,.12);color:var(--purple2)}
 
 /* alert banner */
 #alert-banner{position:fixed;top:46px;left:0;right:0;z-index:99;padding:8px 20px;display:flex;align-items:center;gap:10px;font-size:11px;letter-spacing:.08em;display:none}
@@ -722,6 +748,14 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
           <div class="sc-val" id="stat-align" style="color:var(--yellow)">0.00</div>
           <div class="sc-lbl">Somatic Align</div>
         </div>
+        <div class="stat-card">
+          <div class="sc-val" id="stat-caps" style="color:var(--green)">0</div>
+          <div class="sc-lbl">Caps. Learned</div>
+        </div>
+        <div class="stat-card">
+          <div class="sc-val" id="stat-ds-turns" style="color:var(--purple2)">0</div>
+          <div class="sc-lbl">DS Turns</div>
+        </div>
       </div>
 
       <div class="layer-flow">
@@ -754,8 +788,8 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
       <div id="llm-console">
         <div class="llm-entry">
           <div class="llm-ts">SYSTEM // 00:00:00</div>
-          <div class="llm-state">→ INITIALIZING</div>
-          <div class="llm-text">Latent-Somatic Fusion interface initialized. Waiting for provider and projector state...<span class="llm-cursor"></span></div>
+          <div class="llm-state">→ AWAITING CNS LINK</div>
+          <div class="llm-text">Monitor ready. Connecting to cognitive server at ws://localhost:8765...<span class="llm-cursor"></span></div>
         </div>
       </div>
     </div>
@@ -784,6 +818,20 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
     </div>
   </div>
 
+  <!-- ══ FAR RIGHT: DEEPSEEK INTERNAL DIALOGUE ══ -->
+  <div id="ds-panel">
+    <div class="panel-header">
+      <span class="panel-title">Entity ↔ DeepSeek</span>
+      <span class="panel-sub" id="ds-status">INTERNAL DIALOGUE</span>
+    </div>
+    <div id="ds-feed">
+      <div class="ds-turn ds-sys">
+        Internal entity↔DeepSeek dialogue feed.<br>
+        Hardware discovery queries, capability checks, and chat reasoning appear here.
+      </div>
+    </div>
+  </div>
+
 </div>
 
 <script>
@@ -799,6 +847,9 @@ let COG_INTERVAL = 200; // 5 Hz — updated by Hz slider
 
 // Real tensor heatmap from server (null = use local fallback)
 let serverHeatmap = null;
+
+// Telemetry capability map from server: field → true/false/null
+let telemetryCaps = {};
 
 // Sensor state object
 const S = { voltage:11.8, current_ma:2000, temp_si:45, temp_ml:40, temp_mr:40,
@@ -1257,6 +1308,109 @@ function renderSystemTelemetry() {
     `GPU ${fmtMaybe(SYSTEM.gpu_temp, 1, 'C')} / ${fmtMaybe(SYSTEM.gpu_power_w, 1, 'W')} / ${fmtMaybe(SYSTEM.gpu_util_percent, 1, '%')} | ` +
     `Disk ${fmtMaybe(SYSTEM.disk_temp, 1, 'C')} / R${fmtMaybe(SYSTEM.disk_read_mb_s, 1, 'MB/s')} / W${fmtMaybe(SYSTEM.disk_write_mb_s, 1, 'MB/s')} | ` +
     `Fans ${fmtMaybe(SYSTEM.fan_rpm, 0, 'rpm')} | AC ${truthyBoolLabel(SYSTEM.ac_online)}`;
+  applyCapsToBars();
+}
+
+// ─────────────────────────────────────────────
+// Telemetry caps — hide/probe unavailable sensor rows
+// ─────────────────────────────────────────────
+const CAPS_ROW_MAP = {
+  'gpu_util_percent':    'sys-gpuu',
+  'gpu_temp':            'sys-gput',
+  'gpu_power_w':         'sys-gpup',
+  'gpu_memory_used_mb':  'sys-vram',
+  'battery_percent':     'sys-batt',
+  'fan_rpm':             'sys-fan',
+  'disk_temp':           'sys-diskt',
+  'cpu_power_w':         'sys-cpup',
+  'ac_online':           null, // kv card, not a bar
+  'battery_plugged':     null, // kv card, not a bar
+};
+
+// KV cards linked to discoverable capability fields
+const CAPS_KV_MAP = {
+  'ac_online':          'sys-ac',
+  'gpu_memory_used_mb': 'sys-gpu-mem',
+};
+
+// Null-tick counters: auto-hide bars/kv-cards that stay "--" for 18+ consecutive ticks
+const _nullTicks = {};
+const NULL_HIDE_TICKS = 18;
+
+function _nullTick(key, isNull, hideTarget, hideWith) {
+  if (isNull) {
+    _nullTicks[key] = (_nullTicks[key] || 0) + 1;
+    if (_nullTicks[key] >= NULL_HIDE_TICKS && hideTarget) {
+      if (hideWith === 'class') hideTarget.classList.add('unavailable');
+      else hideTarget.style.display = 'none';
+    }
+  } else {
+    _nullTicks[key] = 0;
+    if (hideTarget) {
+      if (hideWith === 'class') hideTarget.classList.remove('unavailable');
+      else hideTarget.style.display = '';
+    }
+  }
+}
+
+function applyCapsToBars() {
+  if (!Object.keys(telemetryCaps).length) return;
+
+  // Bar rows controlled by discovery caps
+  for (const [field, prefix] of Object.entries(CAPS_ROW_MAP)) {
+    if (!prefix) continue;
+    const cap = telemetryCaps[field];
+    if (cap === undefined) continue;
+    const fillEl = document.getElementById(prefix + '-fill');
+    const valEl  = document.getElementById(prefix + '-val');
+    const row    = fillEl?.closest('.bg-row');
+    if (!row) continue;
+    if (cap === false) {
+      row.classList.add('unavailable');
+      row.classList.remove('probing');
+      if (valEl) valEl.textContent = 'N/A';
+    } else if (cap === null) {
+      row.classList.add('probing');
+      row.classList.remove('unavailable');
+      if (valEl && (valEl.textContent === '--' || valEl.textContent === 'N/A')) valEl.textContent = '···';
+    } else {
+      row.classList.remove('probing', 'unavailable');
+    }
+  }
+
+  // KV cards controlled by capability state
+  for (const [field, kvId] of Object.entries(CAPS_KV_MAP)) {
+    if (!kvId) continue;
+    const cap = telemetryCaps[field];
+    if (cap === undefined) continue;
+    const el   = document.getElementById(kvId);
+    const card = el?.closest('.sys-kv');
+    if (!card) continue;
+    if (cap === false) {
+      card.style.display = 'none';
+    } else if (cap === null) {
+      if (el && (el.textContent === '--' || el.textContent === 'N/A')) el.textContent = '···';
+      card.style.display = '';
+    } else {
+      card.style.display = '';
+    }
+  }
+
+  // Bar rows NOT in caps map — auto-hide after persistent "--" (e.g. disk_busy_percent)
+  const _nonCapBars = ['sys-diskb'];
+  for (const prefix of _nonCapBars) {
+    const valEl = document.getElementById(prefix + '-val');
+    const row   = valEl?.closest('.bg-row');
+    _nullTick(prefix, !valEl || valEl.textContent === '--', row, 'class');
+  }
+
+  // KV cards with array fields — auto-hide after persistent "--"
+  const _arrayKvIds = ['sys-core-map', 'sys-thermals', 'sys-fans-detail'];
+  for (const id of _arrayKvIds) {
+    const el   = document.getElementById(id);
+    const card = el?.closest('.sys-kv');
+    _nullTick(id, !el || el.textContent === '--', card, 'display');
+  }
 }
 
 // ─────────────────────────────────────────────
@@ -1538,28 +1692,72 @@ function cognitiveLoop(now) {
 // ─────────────────────────────────────────────
 const llmConsole = document.getElementById('llm-console');
 let entryCount = 0;
-function addConsoleEntry(text) {
+
+function flashLayerDots() {
+  ['dot-hw','dot-proj','dot-inject','dot-gen'].forEach((id,i) => {
+    setTimeout(() => {
+      const d = document.getElementById(id);
+      if (d) { d.style.boxShadow='0 0 8px currentColor'; setTimeout(()=>{ d.style.boxShadow=''; }, 200); }
+    }, i * 40);
+  });
+}
+
+function addConsoleEntry(text, kind, extra) {
   entryCount++;
+  kind = kind || 'pulse';
+  extra = extra || {};
   const ts = new Date().toTimeString().slice(0,8);
-  const stateLabels = {
-    nominal:'SOMA_STATE: NOMINAL',
-    lowbatt:'SOMA_STATE: PWR_CRITICAL',
-    overheat:'SOMA_STATE: THERM_WARN',
-    cold:'SOMA_STATE: COLD_STATE',
-    fall:'SOMA_STATE: FALL_DETECT',
-    spin:'SOMA_STATE: ROT_ANOMALY',
-    heavyload:'SOMA_STATE: LOAD_MAX'
-  };
-  const cls = scenario === 'nominal' ? '' : (scenario === 'fall' || scenario === 'lowbatt' ? 'critical' : 'warn');
+
+  let borderColor, hdrText, hdrColor, entryClass;
+
+  if (kind === 'discovery_query') {
+    borderColor = 'rgba(0,207,255,0.55)';
+    hdrColor    = 'var(--cyan)';
+    hdrText     = '[DISCOVERY] QUERYING LANGUAGE CORE';
+    entryClass  = 'discovery';
+  } else if (kind === 'discovery_cmd') {
+    borderColor = 'rgba(112,64,232,0.55)';
+    hdrColor    = 'var(--purple2)';
+    hdrText     = '[DISCOVERY] CMD INJECT → SANDBOX';
+    entryClass  = 'cmd';
+  } else if (kind === 'discovery_result') {
+    const ok    = extra.status === 'available';
+    borderColor = ok ? 'rgba(34,197,94,0.55)' : 'rgba(239,68,68,0.45)';
+    hdrColor    = ok ? 'var(--green)' : 'var(--red)';
+    hdrText     = ok ? '[DISCOVERY] ✓ FIELD RESOLVED' : '[DISCOVERY] ✗ FIELD UNAVAILABLE';
+    entryClass  = ok ? 'ok' : 'critical';
+  } else if (kind === 'discovery_skip') {
+    borderColor = 'rgba(148,163,184,0.15)';
+    hdrColor    = 'var(--text3)';
+    hdrText     = '[DISCOVERY] LLM OFFLINE — SKIP';
+    entryClass  = 'skip';
+  } else if (kind === 'autonomous_event') {
+    borderColor = 'rgba(249,115,22,0.5)';
+    hdrColor    = 'var(--orange)';
+    hdrText     = `[AUTONOMOUS EVENT]`;
+    entryClass  = 'warn';
+  } else {
+    // pulse / default system messages
+    const stateLabels = {
+      nominal:'SOMA_STATE: NOMINAL', lowbatt:'SOMA_STATE: PWR_CRITICAL',
+      overheat:'SOMA_STATE: THERM_WARN', cold:'SOMA_STATE: COLD_STATE',
+      fall:'SOMA_STATE: FALL_DETECT', spin:'SOMA_STATE: ROT_ANOMALY', heavyload:'SOMA_STATE: LOAD_MAX'
+    };
+    borderColor = 'var(--border)';
+    hdrColor    = 'var(--text3)';
+    hdrText     = stateLabels[scenario] || 'SOMA_STATE: NOMINAL';
+    entryClass  = scenario === 'nominal' ? '' : (scenario === 'fall' || scenario === 'lowbatt' ? 'critical' : 'warn');
+  }
+
   const entry = document.createElement('div');
-  entry.className = 'llm-entry '+cls;
+  entry.className = 'llm-entry ' + entryClass;
+  entry.style.borderLeftColor = borderColor;
   entry.innerHTML = `
-    <div class="llm-ts">CYCLE #${cogCycle.toString().padStart(4,'0')} // ${ts}</div>
-    <div class="llm-state">→ ${stateLabels[scenario]||'NOMINAL'} | V=${S.voltage.toFixed(2)} T=${S.temp_si.toFixed(1)}°C</div>
+    <div class="llm-ts" style="color:${hdrColor}">${hdrText} // ${ts}</div>
+    <div class="llm-state">V=${S.voltage.toFixed(2)} T=${S.temp_si.toFixed(1)}°C</div>
     <div class="llm-text">${text}</div>`;
   llmConsole.appendChild(entry);
-  // Keep last 30 entries
-  while (llmConsole.children.length > 30) llmConsole.removeChild(llmConsole.firstChild);
+  while (llmConsole.children.length > 60) llmConsole.removeChild(llmConsole.firstChild);
   llmConsole.scrollTop = llmConsole.scrollHeight;
 }
 
@@ -1636,7 +1834,6 @@ function frame(now) {
   renderHeatmap();
   renderBody();
   renderBodyOverlay();
-  if (!wsConnected) cognitiveLoop(now); // server sends monologues when connected
   updateAlerts();
 
   frameCount++;
@@ -2056,6 +2253,10 @@ function applySnapshot(msg) {
 
   if (msg.scenario && msg.scenario !== scenario) setScenarioLocal(msg.scenario);
   if (msg.heatmap && msg.heatmap.length === 256) serverHeatmap = msg.heatmap;
+  if (msg.telemetry_caps && typeof msg.telemetry_caps === 'object') Object.assign(telemetryCaps, msg.telemetry_caps);
+  if (msg.user_caps_count !== undefined) {
+    document.getElementById('stat-caps').textContent = msg.user_caps_count || 0;
+  }
 
   if (msg.hz) {
     document.getElementById('hz-slider').value = msg.hz;
@@ -2096,12 +2297,27 @@ function handleWSMessage(msg) {
   } else if (msg.type === 'tick') {
     if (!running) return;
     applySnapshot(msg);
+  } else if (msg.type === 'cns_stream') {
+    // Real-time cognitive stream from server — the entity's self-awareness feed
+    if (msg.kind === 'pulse') {
+      cogCycle++;
+      totalTokens += Math.ceil((msg.text || '').split(/\s+/).filter(Boolean).length * 1.3);
+      document.getElementById('stat-tokens').textContent = totalTokens;
+      flashLayerDots();
+    }
+    addConsoleEntry(msg.text || '', msg.kind || 'pulse', { status: msg.status, field: msg.field });
   } else if (msg.type === 'autonomous_event') {
     applySnapshot(msg);
     cogCycle++;
     totalTokens += Math.ceil((msg.text || '').split(/\s+/).filter(Boolean).length * 1.3);
     document.getElementById('stat-tokens').textContent = totalTokens;
-    addConsoleEntry(`[${String(msg.event || 'event').toUpperCase()}] ${msg.text || ''}`);
+    // console display handled by cns_stream mirror from server; show fallback only if not mirrored
+  } else if (msg.type === 'telemetry_caps') {
+    if (msg.caps && typeof msg.caps === 'object') Object.assign(telemetryCaps, msg.caps);
+  } else if (msg.type === 'user_caps_count') {
+    document.getElementById('stat-caps').textContent = msg.count || 0;
+  } else if (msg.type === 'deepseek_dialogue') {
+    appendDsEntry(msg.role, msg.text || '', msg.purpose, msg.field);
   } else if (msg.type === 'chat_reply') {
     removeTyping();
     applySnapshot(msg);
@@ -2236,6 +2452,46 @@ bodyOverlay.addEventListener('mouseleave', () => {
 // Resize body overlay when image loads or window resizes
 document.getElementById('body-img').addEventListener('load', resizeBodyOverlay);
 if (document.getElementById('body-img').complete) resizeBodyOverlay();
+
+// ─────────────────────────────────────────────
+// DeepSeek internal dialogue panel
+// ─────────────────────────────────────────────
+const dsFeed = document.getElementById('ds-feed');
+let dsTurnCount = 0;
+const DS_PURPOSE_COLORS = {
+  discovery:        'ds-badge-discovery',
+  capability_check: 'ds-badge-capability_check',
+  chat:             'ds-badge-chat',
+};
+
+function appendDsEntry(role, text, purpose, field) {
+  dsTurnCount++;
+  const ts = new Date().toTimeString().slice(0,8);
+  const isEntity = role === 'entity';
+  const div = document.createElement('div');
+  div.className = 'ds-turn ' + (isEntity ? 'ds-entity' : 'ds-deepseek');
+
+  const purposeClass = DS_PURPOSE_COLORS[purpose] || '';
+  const purposeBadge = purpose
+    ? `<span class="ds-purpose-badge ${purposeClass}">${purpose.replace('_',' ')}</span>`
+    : '';
+  const fieldTag = field ? ` <span style="color:var(--text3);font-size:9px">[${field}]</span>` : '';
+
+  // Truncate long prompts for display
+  const displayText = text.length > 600 ? text.slice(0, 600) + '…' : text;
+
+  div.innerHTML = `
+    <div class="ds-turn-label">${isEntity ? 'ENTITY →' : '← DEEPSEEK'} ${purposeBadge}${fieldTag}<span style="float:right;color:var(--text3);font-size:9px">${ts}</span></div>
+    <div>${displayText.replace(/\n/g, '<br>')}</div>`;
+  dsFeed.appendChild(div);
+  while (dsFeed.children.length > 100) dsFeed.removeChild(dsFeed.firstChild);
+  dsFeed.scrollTop = dsFeed.scrollHeight;
+
+  const dsStatus = document.getElementById('ds-status');
+  if (dsStatus) dsStatus.textContent = isEntity ? 'QUERYING…' : `${dsTurnCount} TURNS`;
+  const dsTurnsEl = document.getElementById('stat-ds-turns');
+  if (dsTurnsEl) dsTurnsEl.textContent = dsTurnCount;
+}
 
 // ─────────────────────────────────────────────
 // Init

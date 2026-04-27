@@ -276,6 +276,76 @@ The runtime must emit executable state beyond browser animation hints.
 - [ ] Map backend actuation channels onto real GPIO/PWM/motor drivers when the hardware interface is ready.
 - [ ] Add acknowledgement/feedback from the actuator side instead of fire-and-forget transport.
 
+## Phase 9: Self-Growth — Shell Execution, Hardware Discovery, Self-Modification
+
+North Star for this phase:
+The entity must be able to find its own hardware gaps, fill them through LLM-guided command discovery,
+verify the result by running bash, update its own sensor code, and push a branch to git.
+Primary objective: survive (preserve the host system). Secondary: grow (become more capable).
+
+### Architecture
+
+```
+tick snapshot → find None fields → needs_discovery?
+    yes → ask LLM: "what bash cmd gives {field} on this Linux box?"
+    LLM reply → ShellExecutor.run(cmd) [timeout 8s, blocked prefixes]
+    success → mark available, store cmd
+    failure → mark unavailable, remove from UI
+    any new discovery + SOMA_SELF_MODIFY=1
+        → write sensor_providers/discovered.py
+        → git add / commit / push → auto/{hostname}-sensors branch
+```
+
+### 9.1 Completed
+
+- [x] `sensor_providers/discoverer.py`: `ShellExecutor`, `HardwareDiscovery`, `SelfModifier`.
+- [x] `ShellExecutor`: sandbox with BLOCKED_PREFIXES, 8s timeout, 4KB output cap.
+- [x] `HardwareDiscovery`: persists `data/capabilities/discovered_commands.json` and `telemetry_caps.json`.
+- [x] `DISCOVERABLE_FIELDS` covers: `gpu_*`, `fan_rpm`, `disk_temp`, `battery_percent`, `cpu_power_w`, `ac_online`, `battery_plugged`, `disk_busy_percent`.
+- [x] `SelfModifier`: generates `sensor_providers/discovered.py`, git add/commit/push to `auto/{hostname}-sensors`.
+- [x] `call_llm_raw()` in `server.py`: lightweight internal LLM call (no entity persona, plain text, 15s timeout).
+- [x] `hardware_discovery_loop()` async task: starts 15s after boot, runs every 90s, paces one field/8s.
+- [x] `telemetry_caps` field added to every tick payload and WS `public_payload`.
+- [x] `shell_exec` WebSocket message type: operator or entity can request a sandboxed shell command.
+- [x] `discovery_trigger` WebSocket message type: manually trigger one-field discovery cycle.
+- [x] `DISCOVERY_ENABLED` (default on) and `DISCOVERY_INTERVAL_S` (default 90s) env vars.
+- [x] `SOMA_SELF_MODIFY` env var guards git operations (default off).
+- [x] `sensor_providers/linux_system.py`: merges `read_discovered_fields()` from `discovered.py` on every read.
+- [x] Frontend bar rows hidden (`display:none`) when `caps[field] === false`; probing state shows `···`.
+- [x] Frontend KV cards (ac_online, gpu_memory) hidden when caps say unavailable — `CAPS_KV_MAP` in `applyCapsToBars()`.
+- [x] Frontend auto-hides non-cap bar rows (`disk_busy_percent`) and array KV cards (Core Load Map, Thermal Map, Fan Bank) after 18 consecutive "--" readings via `_nullTicks` counter.
+- [x] False-positive fix: `record_llm_reply()` rejects commands whose stdout is literal "UNAVAILABLE".
+- [x] `fan_rpm` false-positive cleaned from discovered_commands.json.
+
+### 9.2 Completed
+
+- [x] Discovery retry limit: after `MAX_DISCOVERY_ATTEMPTS` (3) consecutive LLM timeouts,
+      field is marked unavailable and removed from probe queue. Stops infinite re-probe loop.
+- [x] LLM serialization lock (`_get_llm_raw_lock()`): discovery loop and capability checks
+      serialized via asyncio.Lock — prevents concurrent calls on single-threaded local LLM.
+- [x] Direct probed all pending fields on devgui; telemetry_caps.json updated with ground truth:
+      fan_rpm=false, disk_temp=false, battery_percent=false, battery_plugged=false,
+      disk_busy_percent=true (from /proc/diskstats weighted I/O time).
+- [x] Direct bash shortcuts in `try_chat_capability`: speedtest/bandwidth, disk iops, ports
+      bypass LLM entirely — pattern-matched and executed directly. Eliminates NONE false-negative
+      for speedtest.
+
+### 9.3 Remaining
+
+- [ ] Frontend: add "shell" tab or console pane where operator can type a command and see `shell_result`.
+- [ ] When `discovered.py` is written, validate it with `python3 -m py_compile` before git add.
+- [ ] Extend DISCOVERABLE_FIELDS: NVMe SMART temp (`smartctl -A`), AMD GPU metrics (`rocm-smi`), Intel iGPU (`intel_gpu_top -J`).
+- [ ] Add unit test: mock LLM returns known command → ShellExecutor runs it → verify persistence.
+- [ ] Decide whether `SOMA_SELF_MODIFY` should require a `--allow-self-modify` CLI flag for safety.
+
+### 9.3 Self-Growth Drive Integration
+
+- [x] `capability_growth` drive added to homeostatic drives: `clamp01(user_caps_count / 10)`.
+- [x] `known_capabilities` block injected into `build_llm_context()` so entity knows what it can measure.
+- [ ] Add `knowledge_gap` affect signal: count of DISCOVERABLE_FIELDS with caps[field]===null → drives exploration affect.
+- [ ] Include `telemetry_caps` gap summary in `build_salience()` so LLM context reads
+      "N hardware channels unresolved — discovery active".
+
 ## Phase 7: Validation and Test Workflow
 
 Goal:
@@ -316,6 +386,77 @@ Do not lose protocol/memory/body semantics when the runtime moves beyond Python.
 - [ ] Freeze at least one machine-vector and projector-fusion fixture per major body state.
 - [ ] Decide whether memory persistence remains file-based in C++ or moves behind an interface.
 - [ ] Decide the exact tree layout for the eventual C++ runtime once the payload contract is considered stable.
+
+## Phase 10: Conversational Learning Loop
+
+North Star for this phase:
+The entity must learn from every conversation. When a user asks something the entity cannot answer
+from sensors, it asks DeepSeek for a bash command, executes it, answers with real data,
+and stores the capability so the next time it already knows. Growth must be visible.
+
+### Learning Flow
+
+```
+User asks X
+  → try_chat_capability(X)
+      → broadcast "entity" prompt to DeepSeek dialogue panel
+      → call_llm_raw: "can this be answered by a bash cmd? output ONLY the cmd or NONE"
+      → broadcast DeepSeek reply to panel
+      if cmd returned:
+          → run cmd in sandbox (ShellExecutor, 20s limit)
+          → broadcast cns_stream:discovery_cmd + discovery_result
+          → inject real stdout into LLM chat context: [REAL_SYSTEM_DATA: ...]
+          → entity answers with actual measured data
+          → broadcast final chat reply to DeepSeek dialogue panel too
+      if NONE:
+          → entity answers from memory/LLM persona only (no real measurement)
+```
+
+### 10.1 Completed
+
+- [x] `broadcast_ds_turn(role, text, purpose, field)` async helper in server.py.
+- [x] `try_chat_capability(user_text)` — pre-processes every chat message: asks DeepSeek
+      whether it can be answered by bash, runs the command if yes, returns stdout.
+- [x] Chat handler updated: `try_chat_capability` called before `call_llm`; real data
+      injected into enriched context with instruction "use this real measured data".
+- [x] `hardware_discovery_loop` now broadcasts `deepseek_dialogue` around every LLM call.
+- [x] DeepSeek internal dialogue panel (4th column in UI): shows entity→DeepSeek and
+      DeepSeek→entity turns with color-coded badges by purpose.
+- [x] `deepseek_dialogue` WS event handled in browser; `appendDsEntry()` renders turns.
+- [x] Unavailable telemetry rows removed from DOM (not dimmed, completely hidden).
+- [x] `ac_online` and `battery_plugged` added to `DISCOVERABLE_FIELDS`.
+- [x] Capability check prompt fixed: removed false-negative `speedtest → NONE` example;
+      added positive curl-based network speed example and allowed pipes/curl/ss/cat.
+- [x] User capability cache (`user_capabilities.json`) loaded at boot; matching intents
+      reuse cached bash cmd without re-asking DeepSeek.
+- [x] `known_capabilities` block injected into every LLM chat context (user_learned,
+      hw_available, hw_pending, total_user_caps).
+- [x] `capability_growth` homeostatic drive added.
+- [x] Two new `make_soma_pulse` nominal templates that surface `caps_n` in the CNS stream.
+- [x] Stat cards: "Caps. Learned" counter wired to `user_caps_count` WS event.
+
+### 10.2 Next Steps
+
+- [ ] Smarter intent classification: before `try_chat_capability`, classify message as
+      `sensor_query | bash_request | identity | philosophical` — only probe bash for first two.
+      Avoids polluting DS panel with NONE replies for clearly conversational messages.
+- [ ] Entity proactive acknowledgement: when `try_chat_capability` fires and waits for DeepSeek,
+      emit `cns_stream` "Probing capability for: {intent}..." so operator can see the entity is thinking.
+- [ ] `deepseek_dialogue` panel: fold/expand long prompts (truncate at 3 lines, click to expand).
+- [ ] `deepseek_dialogue` panel: filter buttons by purpose (discovery / capability_check / chat).
+- [ ] Entity self-report: when cap_output arrives, also emit an autonomous event "Capability confirmed: {intent}".
+
+### 10.3 Observable Growth Indicators
+
+- [x] "Caps. Learned" stat card added and wired to `user_caps_count` WS event.
+- [x] `make_soma_pulse` nominal templates surface `caps_n` in CNS cognitive stream.
+- [x] Successful chat capability discoveries recorded as episodic memory events.
+- [x] Hardware discovery outcomes (available + unavailable) recorded into episodic memory so the
+      entity retains its hardware map across restarts in the RAG system.
+- [x] Cross-field battery dependency: if `battery_percent` is confirmed unavailable, `battery_plugged`
+      is propagated as unavailable immediately (same hardware path, no LLM re-probe needed).
+- [x] Stale false-positive `battery_percent` entry cleaned from `discovered_commands.json`.
+- [ ] Cumulative capability map visible in Monitor: "N/M telemetry fields resolved" bar or text.
 
 ## Immediate Next Batch
 

@@ -162,6 +162,19 @@ class LinuxSystemProvider(SensorProvider):
             },
         }
 
+        # Merge auto-discovered fields for any system keys still None.
+        try:
+            from sensor_providers.discovered import read_discovered_fields  # type: ignore[import]
+            discovered = read_discovered_fields()
+            for key, value in discovered.items():
+                if snapshot["system"].get(key) is None and value is not None:
+                    try:
+                        snapshot["system"][key] = rounded(float(value), 2)
+                    except (TypeError, ValueError):
+                        snapshot["system"][key] = value
+        except ImportError:
+            pass  # discovered.py not yet generated
+
         return normalize_snapshot(
             snapshot,
             provider=self.name,

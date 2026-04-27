@@ -29,6 +29,12 @@ from websockets.server import ServerConnection
 
 from sensor_providers import CORE_FIELDS, create_provider
 from sensor_providers.base import clamp, clamp01, rounded
+from sensor_providers.discoverer import (
+    DISCOVERABLE_FIELDS,
+    HardwareDiscovery,
+    SelfModifier,
+    ShellExecutor,
+)
 
 WS_HOST = "0.0.0.0"
 WS_PORT = 8765
@@ -391,6 +397,81 @@ provider = create_provider(SENSOR_PROVIDER_NAME)
 clients: set[ServerConnection] = set()
 runtime: dict[str, Any] = make_runtime_state()
 
+# ── hardware discovery globals ────────────────────────────────────────────────
+_shell_exec = ShellExecutor()
+_hw_discovery = HardwareDiscovery(_shell_exec)
+_self_modifier = SelfModifier(_shell_exec)
+DISCOVERY_ENABLED = os.getenv("SOMA_DISCOVERY", "1").strip().lower() not in {
+    "0", "false", "no", "off"
+}
+DISCOVERY_INTERVAL_S = float(os.getenv("SOMA_DISCOVERY_INTERVAL_SEC", "90"))
+
+# ── user capability store ─────────────────────────────────────────────────────
+
+_PROJECT_ROOT_SRV = Path(__file__).parent
+_USER_CAPS_FILE = _PROJECT_ROOT_SRV / "data" / "capabilities" / "user_capabilities.json"
+
+
+def _load_user_caps() -> dict:
+    try:
+        return json.loads(_USER_CAPS_FILE.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+
+def _save_user_cap(intent_key: str, cmd: str, sample_output: str) -> None:
+    caps = _load_user_caps()
+    caps[intent_key] = {
+        "cmd": cmd,
+        "sample_output": sample_output[:200],
+        "discovered_at": time.time(),
+        "use_count": caps.get(intent_key, {}).get("use_count", 0) + 1,
+    }
+    _USER_CAPS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    _USER_CAPS_FILE.write_text(json.dumps(caps, indent=2, ensure_ascii=True), encoding="utf-8")
+
+
+def _match_user_cap(user_text: str) -> tuple[str | None, str | None]:
+    """Return (intent_key, cmd) if user_text matches a stored user capability, else (None, None)."""
+    caps = _load_user_caps()
+    if not caps:
+        return None, None
+    text_lower = user_text.lower()
+    for key, entry in caps.items():
+        # Match by intent key words appearing in user text
+        if all(word in text_lower for word in key.split("_") if len(word) > 2):
+            return key, entry.get("cmd")
+    return None, None
+
+
+def _normalize_intent(user_text: str) -> str:
+    words = re.sub(r'[^a-z0-9\s]', '', user_text.lower()).split()
+    stops = {'the', 'a', 'an', 'is', 'are', 'my', 'your', 'can', 'do', 'make', 'please', 'now',
+             'me', 'mi', 'la', 'il', 'lo', 'ho', 'un', 'una', 'fare', 'fai', 'dammi', 'show',
+             'get', 'check', 'tell', 'what'}
+    meaningful = [w for w in words if w not in stops and len(w) > 2]
+    return '_'.join(meaningful[:3]) or 'unknown'
+
+
+_user_caps_count: int = len(_load_user_caps())
+
+# Serializes all internal LLM calls (discovery + capability checks) so they
+# don't compete when the backend LLM is single-threaded (local proxy / ollama).
+# Chat entity calls use call_llm() which has its own connection and is NOT
+# gated by this lock — chat always wins by running in parallel.
+_llm_raw_lock: asyncio.Lock | None = None  # initialized lazily on first use in async context
+
+def _get_llm_raw_lock() -> asyncio.Lock:
+    global _llm_raw_lock
+    if _llm_raw_lock is None:
+        _llm_raw_lock = asyncio.Lock()
+    return _llm_raw_lock
+
+# Per-field timeout count: after MAX_DISCOVERY_ATTEMPTS consecutive LLM
+# timeouts, the field is marked unavailable to stop the infinite re-probe loop.
+_discovery_timeout_counts: dict[str, int] = {}
+MAX_DISCOVERY_ATTEMPTS = 3
+
 
 def safe_json_dumps(payload: Any) -> str:
     return json.dumps(payload, ensure_ascii=True)
@@ -584,6 +665,8 @@ def build_homeostasis_state(
         "rest": round(affect["fatigue"], 3),
         "warmth": round(affect["cold"], 3),
         "exploration": round(affect["curiosity"], 3),
+        "capability_growth": round(clamp01(_user_caps_count / 10.0), 3),
+        "knowledge_gap": round(affect.get("knowledge_gap", 0.0), 3),
     }
     dominant = sorted(drives.items(), key=lambda item: item[1], reverse=True)[:3]
     return {
@@ -801,6 +884,23 @@ def build_salience(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
             ),
         },
     ]
+
+    # Hardware knowledge gap — drives exploration affect when sensors are missing.
+    caps = _hw_discovery.get_caps()
+    n_unknown = sum(1 for v in caps.values() if v is None)
+    n_unavail = sum(1 for v in caps.values() if v is False)
+    n_known   = sum(1 for v in caps.values() if v is True)
+    if n_unknown > 0:
+        salience.append({
+            "channel": "hardware_discovery",
+            "priority": round(clamp01(n_unknown / max(len(caps), 1)), 3),
+            "summary": (
+                f"{n_unknown} hardware field(s) pending discovery, "
+                f"{n_known} confirmed available, {n_unavail} unavailable — "
+                "initiating LLM-guided sensor resolution"
+            ),
+        })
+
     salience.sort(key=lambda item: item["priority"], reverse=True)
     return salience
 
@@ -1182,6 +1282,12 @@ def derive_affect(core: dict[str, Any], system: dict[str, Any]) -> dict[str, flo
     instability = clamp01((gravity_error / 4.5) + (gz / 4.0) + (gxy / 5.0))
     curiosity = clamp01(0.3 + (cpu_percent / 260.0) + (gpu_util / 260.0) + ((1.0 - fatigue) * 0.25))
 
+    # Knowledge gap: proportion of discoverable fields still pending/unknown.
+    caps = _hw_discovery.get_caps()
+    n_fields = max(len(caps), 1)
+    n_unknown = sum(1 for v in caps.values() if v is None)
+    knowledge_gap = round(clamp01(n_unknown / n_fields), 3)
+
     return {
         "cold": round(cold, 3),
         "heat": round(heat, 3),
@@ -1189,6 +1295,7 @@ def derive_affect(core: dict[str, Any], system: dict[str, Any]) -> dict[str, flo
         "fatigue": round(fatigue, 3),
         "instability": round(instability, 3),
         "curiosity": round(curiosity, 3),
+        "knowledge_gap": knowledge_gap,
     }
 
 
@@ -1485,6 +1592,12 @@ def build_llm_context(snapshot: dict[str, Any], user_text: str) -> dict[str, Any
             },
         },
         "memory": memory_context,
+        "known_capabilities": {
+            "user_learned": list(_load_user_caps().keys()),
+            "hw_available": [f for f, v in _hw_discovery.get_caps().items() if v is True],
+            "hw_pending": [f for f, v in _hw_discovery.get_caps().items() if v is None],
+            "total_user_caps": _user_caps_count,
+        },
     }
 
 
@@ -1586,6 +1699,221 @@ def extract_content(response_json: dict[str, Any]) -> str:
         if "text" in choice:
             return str(choice.get("text") or "")
     return ""
+
+
+def call_llm_raw(prompt: str, timeout_s: float = 15.0) -> str | None:
+    """
+    Minimal LLM call for internal tasks (discovery, self-diagnostic).
+    No entity persona — just system + user message, returns plain text.
+    """
+    config = get_llm_request_config()
+    if config is None:
+        return None
+    # For discovery we want plain text, so strip JSON response_format if present
+    extra = {k: v for k, v in config.get("extra_payload", {}).items() if k != "response_format"}
+    payload = {
+        "model": config["model"],
+        "messages": [
+            {
+                "role": "system",
+                "content": (
+                    "You are the internal diagnostic subsystem of an autonomous Linux agent. "
+                    "Reply with ONLY what is requested. No explanations unless explicitly asked."
+                ),
+            },
+            {"role": "user", "content": prompt},
+        ],
+        "temperature": 0.1,
+        "max_tokens": 128,
+        **extra,
+    }
+    body = json.dumps(payload, ensure_ascii=True).encode("utf-8")
+    headers: dict[str, str] = {"Content-Type": "application/json", "User-Agent": "latent-somatic/discovery"}
+    if config["api_key"]:
+        headers["Authorization"] = f"Bearer {config['api_key']}"
+    req = urllib.request.Request(config["endpoint"], data=body, headers=headers, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout_s) as resp:
+            raw = resp.read().decode("utf-8")
+        parsed = json.loads(raw)
+        text = extract_content(parsed)
+        if text:
+            runtime["llm_last_success_at"] = time.monotonic()
+        return text or None
+    except Exception as exc:
+        print(f"[LLM-RAW] Failed: {exc}")
+        return None
+
+
+async def broadcast_ds_turn(
+    role: str,
+    text: str,
+    purpose: str,
+    field: str | None = None,
+) -> None:
+    """Broadcast an entity ↔ DeepSeek internal dialogue turn to all connected clients."""
+    await broadcast({
+        "type": "deepseek_dialogue",
+        "role": role,        # "entity" | "deepseek"
+        "text": text,
+        "purpose": purpose,  # "discovery" | "capability_check" | "chat"
+        "field": field,
+        "ts": time.time(),
+    })
+
+
+async def try_chat_capability(user_text: str) -> str | None:
+    """
+    If the user request can be answered by running a bash command, run it and return stdout.
+    Returns None if not applicable or if the command fails.
+    Broadcasts deepseek_dialogue and cns_stream events for full observability.
+    Caches discovered capabilities and reuses them on future matching requests.
+    """
+    global _user_caps_count
+
+    # ── Direct shortcuts: bypass LLM for known high-value intents ──────────────
+    # These patterns are resolved immediately without a round-trip to the LLM,
+    # eliminating the NONE false-negative risk and the LLM-lock wait.
+    _DIRECT_SHORTCUTS: list[tuple[str, str]] = [
+        # speedtest / bandwidth — curl CDN download, reports bytes/sec → convert to Mbps
+        (
+            r"speed.?test|bandwidth.?test|network.?speed|internet.?speed|velocit[aà]",
+            r"curl -s -o /dev/null -w '%{speed_download}' --max-time 15 "
+            r"https://speed.cloudflare.com/__down?bytes=20000000 | "
+            r"awk '{printf \"%.2f Mbps\n\", $1/131072}'",
+        ),
+        # disk iostat
+        (r"disk.?busy|iops|io.?stat", r"cat /proc/diskstats | awk 'NR==1{print $4,$8}'"),
+        # open ports
+        (r"open.?port|listening.?port|tcp.?port", r"ss -tuln | awk 'NR>1{print $5}'"),
+    ]
+    _text_lower = user_text.lower()
+    for _pattern, _cmd in _DIRECT_SHORTCUTS:
+        if re.search(_pattern, _text_lower):
+            await broadcast_ds_turn("entity", f"[SHORTCUT] Intent matched: {_pattern!r} → direct cmd", "capability_check")
+            await broadcast({
+                "type": "cns_stream", "kind": "discovery_cmd",
+                "text": f"[CAPABILITY] Direct shortcut: `{_cmd[:80]}` — executing...",
+            })
+            ok, stdout, stderr = await asyncio.to_thread(_shell_exec.run, _cmd)
+            await broadcast_ds_turn("deepseek", f"[SHORTCUT] {'✓ ' + stdout[:120] if ok else '✗ ' + (stderr or 'no output')[:80]}", "capability_check")
+            if ok:
+                await broadcast({
+                    "type": "cns_stream", "kind": "discovery_result",
+                    "text": f"[CAPABILITY] ✓ Direct measurement: {stdout[:120]!r}",
+                    "status": "available",
+                })
+                return stdout[:500]
+            break  # shortcut failed → fall through to LLM
+
+    # Check if we already know how to answer this (cached from previous learning)
+    intent_key, cached_cmd = _match_user_cap(user_text)
+    if cached_cmd:
+        await broadcast({
+            "type": "cns_stream", "kind": "discovery_cmd",
+            "text": f"[CAPABILITY] Cached cmd for `{intent_key}`: `{cached_cmd[:80]}` — executing...",
+        })
+        ok, stdout, stderr = await asyncio.to_thread(_shell_exec.run, cached_cmd)
+        if ok:
+            await broadcast({
+                "type": "cns_stream", "kind": "discovery_result",
+                "text": f"[CAPABILITY] ✓ {stdout[:100]!r}",
+                "status": "available",
+            })
+            return stdout[:500]
+        # If cached cmd fails, fall through to LLM re-discovery
+
+    if not llm_runtime_available():
+        return None
+
+    intent_prompt = (
+        f"User request to an autonomous Linux agent: \"{user_text[:200]}\"\n\n"
+        "Can this request be answered by running a bash command (or short pipeline) on this Linux system?\n"
+        "Rules:\n"
+        "- If YES: output ONLY the bash command. No markdown, no explanation, no code fences.\n"
+        "- If NO: output exactly: NONE\n\n"
+        "Constraints:\n"
+        "- Command must complete in 20 seconds or less\n"
+        "- Must NOT modify system state (no writes, no installs, no root ops)\n"
+        "- Output should be a number, brief JSON, or short text\n"
+        "- Pipes, awk, curl, ip, ss, cat /proc, /sys are all allowed\n"
+        "Examples:\n"
+        "  'show memory' → free -m | awk 'NR==2{print $3\"/\"$2\"MB\"}'\n"
+        "  'cpu temp' → cat /sys/class/thermal/thermal_zone0/temp\n"
+        "  'network download speed' → curl -s -o /dev/null -w '%{speed_download}' --max-time 12 https://speed.cloudflare.com/__down?bytes=20000000\n"
+        "  'open tcp ports' → ss -tuln | awk 'NR>1{print $5}'\n"
+        "  'disk iops' → cat /proc/diskstats | awk 'NR==1{print $4,$8}'\n"
+        "  'who are you?' → NONE\n"
+        "  'what is consciousness?' → NONE\n"
+        "  'write a poem' → NONE"
+    )
+
+    await broadcast_ds_turn("entity", intent_prompt, "capability_check")
+
+    try:
+        # Use LLM lock so capability checks don't compete with discovery loop LLM calls.
+        async with _get_llm_raw_lock():
+            cmd_reply = await asyncio.to_thread(call_llm_raw, intent_prompt, 12.0)
+    except Exception:
+        return None
+
+    if not cmd_reply:
+        return None
+
+    cmd = cmd_reply.strip().strip("`").strip()
+    if not cmd or cmd.upper().startswith("NONE"):
+        await broadcast_ds_turn("deepseek", "NONE — no bash command applicable for this request", "capability_check")
+        return None
+
+    cmd = re.sub(r"^(bash|sh|zsh)\s+", "", cmd, flags=re.IGNORECASE).strip()
+    await broadcast_ds_turn("deepseek", cmd, "capability_check")
+
+    await broadcast({
+        "type": "cns_stream", "kind": "discovery_cmd",
+        "text": f"[CAPABILITY] Chat request triggered: `{cmd[:80]}` — executing in sandbox...",
+    })
+
+    ok, stdout, stderr = await asyncio.to_thread(_shell_exec.run, cmd)
+
+    await broadcast({
+        "type": "cns_stream",
+        "kind": "discovery_result" if ok else "discovery_skip",
+        "text": (
+            f"[CAPABILITY] ✓ Real data obtained: {stdout[:120]!r}" if ok
+            else f"[CAPABILITY] ✗ Command failed: {(stderr or 'no output')[:80]}"
+        ),
+        "status": "available" if ok else "unavailable",
+    })
+
+    if ok:
+        # Store this capability for future use
+        new_intent_key = intent_key or _normalize_intent(user_text)
+        _save_user_cap(new_intent_key, cmd, stdout)
+        new_count = len(_load_user_caps())
+        if new_count > _user_caps_count:
+            _user_caps_count = new_count
+            await broadcast({
+                "type": "cns_stream", "kind": "discovery_result",
+                "text": f"[GROWTH] New capability `{new_intent_key}` learned and stored. Total user capabilities: {_user_caps_count}.",
+                "status": "available",
+            })
+            await broadcast({
+                "type": "user_caps_count",
+                "count": _user_caps_count,
+            })
+        # Record capability discovery in episodic memory
+        try:
+            snap = runtime.get("last_snapshot") or {}
+            remember_episode(
+                "capability_discovery",
+                snap,
+                user_text=user_text,
+                reply_text=f"Learned capability `{new_intent_key}`: cmd=`{cmd[:60]}`",
+            )
+        except Exception:
+            pass
+        return stdout[:500]
+    return None
 
 
 def call_llm(user_text: str, snapshot: dict[str, Any]) -> dict[str, Any] | None:
@@ -1757,6 +2085,8 @@ def public_payload(snapshot: dict[str, Any], *, llm_override: dict[str, Any] | N
         "top_dims": snapshot["tensor"]["top_dims"],
         "top_vals": snapshot["tensor"]["top_vals"],
         "seg_energy": snapshot["tensor"]["seg_energy"],
+        "telemetry_caps": _hw_discovery.get_caps(),
+        "user_caps_count": _user_caps_count,
     }
 
 
@@ -1846,6 +2176,87 @@ def maybe_autonomy_event(snapshot: dict[str, Any]) -> dict[str, Any] | None:
     }
 
 
+_SOMA_PULSE_TEMPLATES: dict[str, list[str]] = {
+    "nominal": [
+        "V={v}V  CPU={cpu}%  RAM={ram}%  T={t}°C — nominal. Projector norm {norm:.1f}. Drive: {drive}.",
+        "All somatic channels within homeostatic range. V={v}V, silicon {t}°C, cpu={cpu}%. Curiosity {cur:.2f}.",
+        "Steady state. {t}°C thermal, {v}V energy, {cpu}% compute. Dominant drive: {drive} ({di:.2f}).",
+        "System coherent. Power {v}V, load {cpu}%, memory {ram}%. Projector projecting {norm:.0f}-norm vector.",
+        "Somatic map stable. {caps_n} user capabilities learned. T={t}°C, CPU={cpu}%. Drive: {drive} ({di:.2f}).",
+        "Capability surface: {caps_n} resolved. V={v}V, silicon {t}°C, projector norm {norm:.1f}. Nominal.",
+        "Knowledge gap active — hardware map incomplete. Probing language core. Curiosity {cur:.2f}.",
+    ],
+    "lowbatt": [
+        "⚠ Energy depleting — V={v}V. Drive: energy_recovery ({di:.2f}). Requesting external power.",
+        "Power critical: {v}V. CPU {cpu}%, T={t}°C. Energy stress {es:.2f}. Seeking charge source.",
+        "Voltage dropping: {v}V. I am rationing compute. Drive {drive} dominant at {di:.2f}.",
+    ],
+    "overheat": [
+        "⚠ Thermal stress {ts:.2f} — silicon {t}°C. Shedding load. Drive: cooling ({di:.2f}).",
+        "T={t}°C on silicon — approaching critical. CPU {cpu}%, load nominal at V={v}V. Cooling drive active.",
+        "Heat state. {t}°C registered. Projector thermal dims amplified. Cooldown policy engaged.",
+    ],
+    "fall": [
+        "⚠ FALL — Z={az:.2f}m/s². Orientation failure. Instability {ins:.2f}. Reflex stabilize engaged.",
+        "Gravity vector anomalous: Z={az:.2f} m/s². Pitch {gx:.2f} rad/s. Fall sequence active.",
+    ],
+    "spin": [
+        "Yaw {gz:.2f} rad/s. Spatial reference lost. Somatic vector mapping disorientation. Drive: stability.",
+        "⚠ ROTATION {gz:.2f} rad/s. IMU registering continuous spin. Instability {ins:.2f}.",
+    ],
+    "heavyload": [
+        "High load: CPU {cpu}%  RAM {ram}%  V={v}V sag. Drive: rest ({di:.2f}). Throttle policy engaged.",
+        "Heavy compute — {cpu}% CPU, {ram}% RAM. T={t}°C climbing. Somatic vector tilted toward fatigue.",
+    ],
+    "cold": [
+        "Cold state — T={t}°C below nominal. Drive: warmth ({di:.2f}). Increasing idle compute.",
+        "Thermal low: {t}°C. Cold affect {ca:.2f}. Projector cold-dims active. Warming policy applied.",
+    ],
+}
+
+_DISCOVERY_PULSE_TEMPLATES = [
+    "Self-scan: {n} telemetry field(s) unresolved. Initiating language-core query for resolution commands.",
+    "Hardware map incomplete — {n} channel(s) pending. Querying language core for bash resolution path.",
+    "Knowledge gap detected: {n} missing sensor field(s). Engaging discovery subsystem.",
+]
+
+_DISCOVERY_RESULT_TEMPLATES = {
+    "available": "✓ Field `{field}` resolved — command confirmed. Integrating into telemetry map.",
+    "unavailable": "✗ Field `{field}` unavailable on this hardware. Removing from telemetry surface.",
+}
+
+
+def make_soma_pulse(snapshot: dict[str, Any]) -> str:
+    scenario = snapshot["scenario"]
+    system   = snapshot["system"]
+    sensors  = snapshot["sensors"]
+    affect   = snapshot["affect"]
+    homeo    = snapshot["homeostasis"]
+    proj     = snapshot["projector"]
+
+    dominant = homeo["dominant"][0] if homeo["dominant"] else {"name": "exploration", "intensity": 0.0}
+    pool = _SOMA_PULSE_TEMPLATES.get(scenario, _SOMA_PULSE_TEMPLATES["nominal"])
+    tmpl = random.choice(pool)
+    return tmpl.format(
+        v      = rounded(sensors.get("voltage", 12.0), 2),
+        t      = rounded(system.get("cpu_temp") or sensors.get("temp_si", 35.0), 1),
+        cpu    = round(float(system.get("cpu_percent") or 0.0), 1),
+        ram    = round(float(system.get("memory_percent") or 0.0), 1),
+        norm   = float(proj.get("norm", 0.0)),
+        drive  = dominant["name"],
+        di     = float(dominant["intensity"]),
+        cur    = float(affect.get("curiosity", 0.0)),
+        es     = float(affect.get("energy_low", 0.0)),
+        ts     = float(affect.get("heat", 0.0)),
+        ins    = float(affect.get("instability", 0.0)),
+        ca     = float(affect.get("cold", 0.0)),
+        az     = float(sensors.get("az", -9.81)),
+        gx     = abs(float(sensors.get("gx", 0.0))),
+        gz     = abs(float(sensors.get("gz", 0.0))),
+        caps_n = _user_caps_count,
+    )
+
+
 async def broadcast(msg: dict[str, Any]):
     if not clients:
         return
@@ -1854,6 +2265,10 @@ async def broadcast(msg: dict[str, Any]):
 
 
 async def tick_loop():
+    pulse_counter = 0
+    # Emit a soma pulse every ~1 second (hz ticks) so the monitor streams continuously.
+    PULSE_EVERY = 1  # ticks per pulse; adjusted dynamically from hz below
+
     while True:
         hz = clamp(float(runtime["hz"]), 0.2, 20.0)
         runtime["hz"] = hz
@@ -1862,6 +2277,27 @@ async def tick_loop():
 
         snapshot = build_snapshot()
         await broadcast({"type": "tick", **public_payload(snapshot)})
+
+        # Continuous cognitive stream — one pulse per second (hz ticks at current rate).
+        pulse_counter += 1
+        pulse_every = max(1, round(hz))  # recalculate each tick
+        if pulse_counter >= pulse_every:
+            pulse_counter = 0
+            pulse_text = make_soma_pulse(snapshot)
+            await broadcast({
+                "type": "cns_stream",
+                "kind": "pulse",
+                "text": pulse_text,
+                "scenario": snapshot["scenario"],
+                "affect": snapshot["affect"],
+                "sensors": {
+                    "v": rounded(snapshot["sensors"].get("voltage", 12.0), 2),
+                    "t": rounded(
+                        snapshot["system"].get("cpu_temp") or snapshot["sensors"].get("temp_si", 35.0), 1
+                    ),
+                    "cpu": round(float(snapshot["system"].get("cpu_percent") or 0.0), 1),
+                },
+            })
 
         event = maybe_autonomy_event(snapshot)
         if event:
@@ -1881,6 +2317,14 @@ async def tick_loop():
                     **public_payload(snapshot),
                 }
             )
+            # Mirror autonomous events into cns_stream so the monitor always catches them.
+            await broadcast({
+                "type": "cns_stream",
+                "kind": "autonomous_event",
+                "text": f"[{event['event'].upper()}] {event['text']}",
+                "scenario": snapshot["scenario"],
+                "affect": event["affect"],
+            })
 
         elapsed = time.monotonic() - started
         await asyncio.sleep(max(0.0, dt - elapsed))
@@ -1922,8 +2366,25 @@ async def handler(websocket: ServerConnection):
                 snapshot = build_snapshot()
                 remember_dialogue_turn("user", user_text, snapshot)
                 llm_meta_override = build_llm_status(snapshot)
+
+                # Try to answer via real bash command before calling the entity persona LLM
+                cap_output = await try_chat_capability(user_text)
+                enriched_text = user_text
+                if cap_output:
+                    enriched_text = (
+                        f"{user_text}\n\n"
+                        f"[REAL_SYSTEM_DATA from bash command: {cap_output.strip()[:400]}]\n"
+                        "Use this real measured data in your reply. Do not invent numbers."
+                    )
+
+                # Broadcast what the entity is sending to its language core
+                ds_entity_text = f"[CHAT] {user_text[:300]}"
+                if cap_output:
+                    ds_entity_text += f"\n→ enriched with real command output: {cap_output.strip()[:100]}"
+                await broadcast_ds_turn("entity", ds_entity_text, "chat")
+
                 try:
-                    llm_reply = await asyncio.to_thread(call_llm, user_text, snapshot)
+                    llm_reply = await asyncio.to_thread(call_llm, enriched_text, snapshot)
                 except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError) as exc:
                     runtime["llm_last_failure_at"] = time.monotonic()
                     print(f"[LLM] Request failed: {exc}")
@@ -1933,6 +2394,9 @@ async def handler(websocket: ServerConnection):
                     llm_reply = build_fallback_reply(user_text, snapshot)
                 if "llm" in llm_reply:
                     llm_meta_override = llm_reply["llm"]
+
+                # Broadcast what DeepSeek replied
+                await broadcast_ds_turn("deepseek", llm_reply.get("speech", "")[:400], "chat")
                 remember_dialogue_turn("assistant", llm_reply["speech"], snapshot)
                 remember_episode(
                     "chat",
@@ -1964,11 +2428,226 @@ async def handler(websocket: ServerConnection):
                 except (TypeError, ValueError):
                     pass
 
+            elif mtype == "shell_exec":
+                # Operator-requested shell command (must be safe).
+                cmd = str(msg.get("cmd") or "").strip()
+                if cmd:
+                    ok, stdout, stderr = await asyncio.to_thread(_shell_exec.run, cmd)
+                    await websocket.send(safe_json_dumps({
+                        "type": "shell_result",
+                        "cmd": cmd,
+                        "ok": ok,
+                        "stdout": stdout[:2048],
+                        "stderr": stderr[:512],
+                    }))
+
+            elif mtype == "discovery_trigger":
+                # Operator manually triggers one discovery cycle immediately.
+                field = str(msg.get("field") or "").strip()
+                if field in DISCOVERABLE_FIELDS and _hw_discovery.needs_discovery(field):
+                    snap = runtime.get("last_snapshot") or {}
+                    sys_prof = {
+                        "cpu_count_logical": snap.get("system", {}).get("cpu_count_logical"),
+                        "memory_total_gb": snap.get("system", {}).get("memory_total_gb"),
+                    }
+                    prompt = _hw_discovery.build_discovery_prompt(
+                        field, DISCOVERABLE_FIELDS[field], sys_prof
+                    )
+                    llm_text = await asyncio.to_thread(call_llm_raw, prompt, 15.0)
+                    status = "pending"
+                    if llm_text:
+                        status = await asyncio.to_thread(
+                            _hw_discovery.record_llm_reply, field, llm_text
+                        )
+                    await websocket.send(safe_json_dumps({
+                        "type": "telemetry_caps",
+                        "caps": _hw_discovery.get_caps(),
+                        "field": field,
+                        "status": status,
+                    }))
+
     except websockets.exceptions.ConnectionClosed:
         pass
     finally:
         clients.discard(websocket)
         print(f"[WSS] Client disconnected: {remote} (remaining: {len(clients)})")
+
+
+async def hardware_discovery_loop() -> None:
+    """
+    Background task: LLM-guided sensor field discovery.
+    For each DISCOVERABLE_FIELDS entry that returns None in the current snapshot:
+      1. Skip if already tried.
+      2. Ask LLM which bash command to run.
+      3. Run it; record available / unavailable.
+      4. Broadcast telemetry_caps event to all clients.
+      5. If SOMA_SELF_MODIFY=1 and new discoveries: generate code + git push.
+    Runs every DISCOVERY_INTERVAL_S seconds. Graceful if LLM is offline.
+    """
+    if not DISCOVERY_ENABLED:
+        print("[DISCOVERY] disabled (SOMA_DISCOVERY=0)")
+        return
+
+    # Give the server a moment to warm up before starting discovery.
+    await asyncio.sleep(15)
+    print(f"[DISCOVERY] Starting hardware discovery loop (interval={DISCOVERY_INTERVAL_S}s)")
+
+    while True:
+        snapshot = runtime.get("last_snapshot")
+        if snapshot is None:
+            await asyncio.sleep(5)
+            continue
+
+        system = snapshot.get("system", {})
+        caps_now = _hw_discovery.get_caps()
+
+        # Cross-field dependency: battery_plugged/battery_percent share the same hardware path.
+        # If either is confirmed unavailable, propagate to the other without probing.
+        _battery_group = {"battery_percent", "battery_plugged"}
+        for field in list(_battery_group):
+            peer = (_battery_group - {field}).pop()
+            if caps_now.get(peer) is False and _hw_discovery.needs_discovery(field):
+                _hw_discovery._mark_unavailable(field, f"skipped — peer field `{peer}` already confirmed unavailable on this hardware")
+                await broadcast({"type": "telemetry_caps", "caps": _hw_discovery.get_caps()})
+
+        need_discovery: list[tuple[str, str]] = []
+        for field, description in DISCOVERABLE_FIELDS.items():
+            if system.get(field) is None and _hw_discovery.needs_discovery(field):
+                need_discovery.append((field, description))
+
+        system_profile = {
+            "cpu_count_logical": system.get("cpu_count_logical"),
+            "cpu_count_physical": system.get("cpu_count_physical"),
+            "memory_total_gb": system.get("memory_total_gb"),
+        }
+
+        new_discoveries = False
+        for field, description in need_discovery:
+            if not llm_runtime_available():
+                await broadcast({
+                    "type": "cns_stream", "kind": "discovery_skip",
+                    "text": f"[DISCOVERY] Language core offline — skipping {field} resolution. Will retry when LLM reconnects.",
+                    "field": field,
+                })
+                break
+
+            # Announce query to browser monitor
+            await broadcast({
+                "type": "cns_stream", "kind": "discovery_query",
+                "text": f"[DISCOVERY] Field `{field}` absent from telemetry map. "
+                        f"Querying language core: \"{description}\" — awaiting bash command...",
+                "field": field,
+            })
+
+            print(f"[DISCOVERY] Querying LLM for field: {field}")
+            prompt = _hw_discovery.build_discovery_prompt(field, description, system_profile)
+            await broadcast_ds_turn("entity", prompt, "discovery", field)
+            llm_text: str | None = None
+            try:
+                # Serialize discovery LLM calls so they don't compete with each other.
+                # Chat entity calls (call_llm) run independently and are not blocked here.
+                async with _get_llm_raw_lock():
+                    llm_text = await asyncio.to_thread(call_llm_raw, prompt, 15.0)
+            except Exception as exc:
+                print(f"[DISCOVERY] LLM call error for {field}: {exc}")
+                llm_text = None
+
+            if llm_text:
+                _discovery_timeout_counts.pop(field, None)  # reset retry counter on success
+                await broadcast_ds_turn("deepseek", llm_text.strip()[:300], "discovery", field)
+                cmd_preview = llm_text.strip().strip("`")[:80]
+                await broadcast({
+                    "type": "cns_stream", "kind": "discovery_cmd",
+                    "text": f"[DISCOVERY] Language core → cmd: `{cmd_preview}` — executing in sandbox...",
+                    "field": field,
+                })
+
+                result = await asyncio.to_thread(
+                    _hw_discovery.record_llm_reply, field, llm_text
+                )
+                new_discoveries = new_discoveries or (result == "available")
+
+                result_text = _DISCOVERY_RESULT_TEMPLATES.get(result, f"{field}: {result}").format(field=field)
+                await broadcast({
+                    "type": "cns_stream", "kind": "discovery_result",
+                    "text": f"[DISCOVERY] {result_text}",
+                    "field": field, "status": result,
+                })
+
+                # Record discovery outcome in episodic memory — entity retains this across restarts
+                try:
+                    snap = runtime.get("last_snapshot") or {}
+                    if snap:
+                        cmd_stored = _hw_discovery.commands.get(field, {}).get("cmd", llm_text.strip()[:60])
+                        remember_episode(
+                            "hardware_discovery",
+                            snap,
+                            user_text=f"[SELF] Hardware probe: {field}",
+                            reply_text=(
+                                f"Confirmed: `{field}` available — cmd=`{cmd_stored[:80]}`"
+                                if result == "available"
+                                else f"Confirmed: `{field}` unavailable on this hardware."
+                            ),
+                        )
+                except Exception as _mem_exc:
+                    print(f"[DISCOVERY] episodic memory write failed: {_mem_exc}")
+            else:
+                # LLM timeout / no reply — increment retry counter.
+                # After MAX_DISCOVERY_ATTEMPTS failures, mark as unavailable to stop the loop.
+                _discovery_timeout_counts[field] = _discovery_timeout_counts.get(field, 0) + 1
+                attempts = _discovery_timeout_counts[field]
+                if attempts >= MAX_DISCOVERY_ATTEMPTS:
+                    _hw_discovery._mark_unavailable(
+                        field,
+                        f"LLM did not respond after {attempts} attempts — marked unavailable to stop re-probe loop"
+                    )
+                    _discovery_timeout_counts.pop(field, None)
+                    print(f"[DISCOVERY] {field} marked unavailable after {attempts} LLM timeouts")
+                    await broadcast({
+                        "type": "cns_stream", "kind": "discovery_result",
+                        "text": f"[DISCOVERY] ✗ `{field}` — language core unresponsive after {attempts} attempts. Removing from probe queue.",
+                        "field": field, "status": "unavailable",
+                    })
+                else:
+                    print(f"[DISCOVERY] No LLM reply for {field} (attempt {attempts}/{MAX_DISCOVERY_ATTEMPTS}), will retry")
+                    await broadcast({
+                        "type": "cns_stream", "kind": "discovery_skip",
+                        "text": f"[DISCOVERY] Language core silent for `{field}` ({attempts}/{MAX_DISCOVERY_ATTEMPTS}). Queued for retry.",
+                        "field": field,
+                    })
+
+            # Broadcast updated caps after each field to keep UI responsive
+            caps = _hw_discovery.get_caps()
+            await broadcast({
+                "type": "telemetry_caps",
+                "caps": caps,
+                "field": field,
+                "status": _hw_discovery.commands.get(field, {}).get("status", "pending"),
+            })
+
+            # Pace discovery: one field per 8 seconds to avoid LLM rate limits
+            await asyncio.sleep(8)
+
+        # After all discoveries in this cycle, broadcast full caps
+        if need_discovery:
+            await broadcast({
+                "type": "telemetry_caps",
+                "caps": _hw_discovery.get_caps(),
+                "cycle_complete": True,
+            })
+
+        # Self-modification: write generated code + git push
+        if new_discoveries:
+            try:
+                await asyncio.to_thread(
+                    _self_modifier.commit_discovery,
+                    _hw_discovery.commands,
+                    _hw_discovery.caps,
+                )
+            except Exception as exc:
+                print(f"[SELF-MODIFY] commit_discovery error: {exc}")
+
+        await asyncio.sleep(DISCOVERY_INTERVAL_S)
 
 
 async def main():
@@ -1993,10 +2672,15 @@ async def main():
     async with websockets.serve(handler, args.host, args.port):
         print("[LSF] Server READY - open docs/simulator.html in browser")
         tick_task = asyncio.create_task(tick_loop())
+        disc_task = asyncio.create_task(hardware_discovery_loop()) if DISCOVERY_ENABLED else None
+        print(f"[LSF] Hardware discovery: {'enabled' if DISCOVERY_ENABLED else 'disabled'} "
+              f"| self-modify: {'enabled' if __import__('sensor_providers.discoverer', fromlist=['SELF_MODIFY_ENABLED']).SELF_MODIFY_ENABLED else 'disabled'}")
         try:
             await asyncio.Future()
         except (KeyboardInterrupt, asyncio.CancelledError):
             tick_task.cancel()
+            if disc_task:
+                disc_task.cancel()
             print("\n[LSF] Server stopped.")
 
 
