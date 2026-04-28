@@ -39,12 +39,14 @@ class SomaMind:
         *,
         on_reflection: Callable[[dict[str, Any]], None] | None = None,
         on_growth: Callable[[dict[str, Any]], None] | None = None,
+        autobiography: Any | None = None,
     ) -> None:
         self._goals = goal_store
         self._mem = memory
         self._reflection = reflection_engine
         self._on_reflection = on_reflection
         self._on_growth = on_growth
+        self._autobiography = autobiography
 
         self._trace = CognitiveTrace()
         self._tick_count: int = 0
@@ -56,6 +58,8 @@ class SomaMind:
         self._last_user_interaction_at: float = 0.0
         self._expressiveness_events: int = 0
         self._growth_last_event: str | None = None
+
+        self._last_growth_stage: str = ""
 
         # Growth baseline
         self._growth: dict[str, Any] = {"growth_score": 0.0, "stage": "reflex_shell", "current_evolution_target": "connect_real_sensors"}
@@ -193,6 +197,31 @@ class SomaMind:
                 self._growth["growth_score"],
                 self._growth["stage"],
             )
+
+        # Write autobiography milestone when growth stage changes
+        new_stage = self._growth.get("stage", "")
+        if new_stage and new_stage != self._last_growth_stage and self._autobiography is not None:
+            try:
+                self._autobiography.write_event({
+                    "kind": "milestone",
+                    "title": f"Growth stage reached: {new_stage}",
+                    "summary": (
+                        f"Soma advanced to growth stage '{new_stage}'. "
+                        f"Score: {self._growth['growth_score']:.3f}. "
+                        f"Next target: {self._growth.get('current_evolution_target', '?')}."
+                    ),
+                    "impact": "high",
+                    "evidence": [
+                        f"growth_score={self._growth['growth_score']:.3f}",
+                        f"stage={new_stage}",
+                        f"provider_real={provider_is_real}",
+                    ],
+                    "related_goal": "understand_own_body",
+                    "emotional_tone": "curious",
+                })
+            except Exception:
+                pass
+            self._last_growth_stage = new_stage
 
         # 13. Build and return MindState
         speech_remaining = max(0.0, self._speech_cooldown_until - now)

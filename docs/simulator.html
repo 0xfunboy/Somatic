@@ -31,6 +31,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--mono);font-size:12
 .dot-green{background:var(--green);box-shadow:0 0 6px var(--green);animation:blink 2s infinite}
 .dot-red{background:var(--red);box-shadow:0 0 6px var(--red)}
 .dot-yellow{background:var(--yellow);box-shadow:0 0 6px var(--yellow)}
+.dot-gray{background:var(--text3)}
 @keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
 .tb-right{margin-left:auto;display:flex;align-items:center;gap:0}
 .tb-btn{height:46px;padding:0 18px;display:flex;align-items:center;gap:7px;font-family:var(--head);font-size:10px;letter-spacing:.1em;text-transform:uppercase;cursor:pointer;border:none;background:transparent;color:var(--text2);border-left:1px solid var(--border);transition:color .15s,background .15s}
@@ -238,6 +239,11 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
 .drive-bar{flex:1;height:4px;background:rgba(255,255,255,.08);border-radius:2px;overflow:hidden}
 .drive-fill{height:100%;border-radius:2px;transition:width .5s}
 .drive-val{font-size:9px;color:var(--text2);width:34px;text-align:right;flex-shrink:0}
+.section-header{font-size:9px;color:var(--cyan);letter-spacing:.12em;text-transform:uppercase;margin-bottom:6px}
+.kv-row{display:flex;justify-content:space-between;align-items:flex-start;padding:2px 0;border-bottom:1px solid rgba(255,255,255,.04)}
+.kv-row:last-child{border-bottom:none}
+.kv-label{font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;flex-shrink:0;padding-right:8px}
+.kv-val{font-size:10px;color:var(--text);text-align:right;max-width:65%}
 
 /* ── trace pane ── */
 .trace-header{padding:10px 12px 6px;border-bottom:1px solid var(--border);flex-shrink:0}
@@ -286,6 +292,10 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
     <div class="tb-badge"><div class="dot dot-red" id="shell-dot"></div><span id="shell-mode">SHELL: OFF</span></div>
     <div class="tb-badge"><div class="dot dot-red" id="selfmod-dot"></div><span id="selfmod-mode">SELF-MOD: OFF</span></div>
     <div class="tb-badge"><div class="dot dot-red" id="survival-dot"></div><span id="survival-mode">SURVIVAL: OFF</span></div>
+    <div class="tb-badge"><div class="dot dot-green" id="journal-dot"></div><span id="journal-mode">JOURNAL: OK</span></div>
+    <div class="tb-badge"><div class="dot dot-green" id="autobio-dot"></div><span id="autobio-mode">AUTOBIO: ACTIVE</span></div>
+    <div class="tb-badge"><div class="dot dot-gray" id="nightly-dot"></div><span id="nightly-mode">NIGHTLY: SCHEDULED</span></div>
+    <div class="tb-badge"><div class="dot dot-gray" id="si-dot"></div><span id="si-mode">SELF-IMPROVE: IDLE</span></div>
   </div>
   <div class="tb-right">
     <button class="tb-btn active" id="btn-run" onclick="toggleRun()">
@@ -895,6 +905,15 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
         <div class="mind-row"><span class="mind-lbl">Body Patterns</span><span class="mind-val" id="mp-body-patterns">--</span></div>
         <div class="mind-row"><span class="mind-lbl">Evo Target</span><span class="mind-val" id="mp-evo-target" style="font-size:9px">--</span></div>
         <div class="mind-row"><span class="mind-lbl">Next Step</span><span class="mind-val" id="mp-next-step" style="font-size:9px;line-height:1.4">--</span></div>
+      </div>
+      <div class="mind-section" id="mem-section">
+        <div class="section-header">AUTOBIO MEMORY</div>
+        <div class="kv-row"><span class="kv-label">stage</span><span class="kv-val" id="mem-stage">—</span></div>
+        <div class="kv-row"><span class="kv-label">lessons</span><span class="kv-val" id="mem-lessons">0</span></div>
+        <div class="kv-row"><span class="kv-label">proposals</span><span class="kv-val" id="mem-proposals">0</span></div>
+        <div class="kv-row"><span class="kv-label">journal</span><span class="kv-val" id="mem-journal-size">—</span></div>
+        <div class="kv-row"><span class="kv-label">last event</span><span class="kv-val" id="mem-last-event">—</span></div>
+        <div class="kv-row"><span class="kv-label">nightly</span><span class="kv-val" id="mem-nightly">—</span></div>
       </div>
     </div>
   </div>
@@ -2620,6 +2639,9 @@ function applySnapshot(msg) {
   if (msg.capabilities && typeof msg.capabilities === 'object') {
     updateCapabilityBadges(msg.capabilities);
   }
+  if (msg.journal && typeof msg.journal === 'object') {
+    updateMemoryPanel(msg.journal);
+  }
 
   if (msg.hz) {
     document.getElementById('hz-slider').value = msg.hz;
@@ -2855,6 +2877,56 @@ function appendDsEntry(role, text, purpose, field) {
   if (dsStatus) dsStatus.textContent = isEntity ? 'QUERYING…' : `${dsTurnCount} TURNS`;
   const dsTurnsEl = document.getElementById('stat-ds-turns');
   if (dsTurnsEl) dsTurnsEl.textContent = dsTurnCount;
+}
+
+// ─────────────────────────────────────────────
+// Phase 6 — Memory panel
+// ─────────────────────────────────────────────
+function updateMemoryPanel(journal) {
+  if (!journal) return;
+
+  // Topbar badges
+  const setBadge = (dotId, modeId, text, color) => {
+    const dot = document.getElementById(dotId);
+    const mode = document.getElementById(modeId);
+    if (dot) { dot.className = 'dot dot-' + color; }
+    if (mode) mode.textContent = text;
+  };
+
+  if (journal.journal_enabled) {
+    const large = journal.journal_large;
+    setBadge('journal-dot', 'journal-mode', large ? 'JOURNAL: LARGE' : 'JOURNAL: OK', large ? 'yellow' : 'green');
+  } else {
+    setBadge('journal-dot', 'journal-mode', 'JOURNAL: OFF', 'gray');
+  }
+  setBadge('autobio-dot', 'autobio-mode',
+    journal.autobiography_enabled ? 'AUTOBIO: ACTIVE' : 'AUTOBIO: OFF',
+    journal.autobiography_enabled ? 'green' : 'gray');
+  setBadge('nightly-dot', 'nightly-mode',
+    journal.nightly_enabled ? 'NIGHTLY: SCHEDULED' : 'NIGHTLY: OFF',
+    journal.nightly_enabled ? 'green' : 'gray');
+
+  const qsum = journal.queue_summary || {};
+  const queued = (qsum.queued || 0);
+  const rolledBack = (qsum.rolled_back || 0);
+  const siText = !journal.self_improvement_enabled ? 'SELF-IMPROVE: OFF'
+    : queued > 0 ? `SELF-IMPROVE: QUEUED(${queued})`
+    : rolledBack > 0 ? `SELF-IMPROVE: ROLLED BACK`
+    : 'SELF-IMPROVE: IDLE';
+  const siColor = !journal.self_improvement_enabled ? 'gray'
+    : queued > 0 ? 'yellow'
+    : rolledBack > 0 ? 'red' : 'green';
+  setBadge('si-dot', 'si-mode', siText, siColor);
+
+  // Memory panel values
+  const setText = (id, v) => { const el=document.getElementById(id); if(el) el.textContent=v||'—'; };
+  setText('mem-lessons', qsum.done || 0);
+  setText('mem-proposals', queued);
+  if (journal.hot_size_kb != null) {
+    const warn = journal.journal_large ? ' ⚠' : '';
+    setText('mem-journal-size', journal.hot_size_kb + 'KB' + warn);
+  }
+  setText('mem-stage', journal.trace_persistence || '—');
 }
 
 // ─────────────────────────────────────────────

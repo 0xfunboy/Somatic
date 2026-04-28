@@ -41,6 +41,11 @@ from soma_core.reflection import ReflectionEngine
 from soma_core.mind import SomaMind
 from soma_core.executor import AutonomousShellExecutor
 from soma_core.self_modify import AutonomousSelfModifier
+from soma_core.journal import JournalManager
+from soma_core.autobiography import Autobiography
+from soma_core.routines import RoutineRunner
+from soma_core.nightly import NightlyReflection
+from soma_core.self_improvement import SelfImprovementWorkflow
 
 WS_HOST = "0.0.0.0"
 WS_PORT = 8765
@@ -517,12 +522,61 @@ _autonomous_exec: AutonomousShellExecutor | None = (
         max_memory_pct=_cfg_ref.max_memory_pct,
         max_cpu_load=_cfg_ref.max_cpu_load,
         package_mutation_enabled=_cfg_ref.package_mutation_enabled,
+        autobiography=None,  # wired below after _autobiography is created
     ) if _SHELL_ACTIVE else None
 )
 _autonomous_self_mod: AutonomousSelfModifier | None = (
-    AutonomousSelfModifier(_autonomous_exec, _soma_mind._trace)
+    AutonomousSelfModifier(_autonomous_exec, _soma_mind._trace, autobiography=None)
     if _SELF_MOD_ACTIVE and _autonomous_exec is not None else None
 )
+
+# ── Phase 6: Journal, Autobiography, Routines, Nightly, Self-Improvement ─────
+_journal: JournalManager | None = None
+_autobiography: Autobiography | None = None
+_routine_runner: RoutineRunner | None = None
+_nightly_reflection: NightlyReflection | None = None
+_self_improvement: SelfImprovementWorkflow | None = None
+
+if _cfg_ref.journal_enabled:
+    _journal = JournalManager(
+        persistence=_cfg_ref.trace_persistence,
+        hot_max_mb=_cfg_ref.journal_hot_max_mb,
+    )
+    _soma_mind._trace.set_journal(_journal)
+
+if _cfg_ref.autobiography_enabled:
+    _autobiography = Autobiography()
+    # Wire autobiography into already-constructed modules
+    if _autonomous_exec is not None:
+        _autonomous_exec._autobiography = _autobiography
+    if _autonomous_self_mod is not None:
+        _autonomous_self_mod._autobiography = _autobiography
+    _soma_mind._autobiography = _autobiography
+    _reflection_engine._autobiography = _autobiography
+
+if _cfg_ref.routines_enabled:
+    _routine_runner = RoutineRunner(
+        trace=_soma_mind._trace,
+        memory=_soma_memory,
+        autobiography=_autobiography,
+        journal=_journal,
+    )
+
+if _cfg_ref.nightly_reflection:
+    _nightly_reflection = NightlyReflection(
+        journal=_journal,
+        autobiography=_autobiography,
+        trace=_soma_mind._trace,
+        call_llm_raw=None,  # wired up after call_llm_raw is defined
+    )
+
+if _cfg_ref.self_improvement_enabled:
+    _self_improvement = SelfImprovementWorkflow(
+        self_modifier=_autonomous_self_mod,
+        executor=_autonomous_exec,
+        trace=_soma_mind._trace,
+        autobiography=_autobiography,
+    )
 
 
 def _safe_shell_run(cmd: str, reason: str = "", expected_effect: str = "") -> tuple[bool, str, str]:
@@ -1580,6 +1634,45 @@ def build_actuation_state(snapshot: dict[str, Any], policy: dict[str, Any]) -> d
     }
 
 
+def _severity_bucket(v: float) -> int:
+    """Bucket a 0–1 stress/instability value into 3 tiers to suppress jitter."""
+    if v < 0.35:
+        return 0
+    if v < 0.65:
+        return 1
+    return 2
+
+
+def _actuation_semantic_signature(snapshot: dict[str, Any], actuation: dict[str, Any]) -> str:
+    """
+    Build a semantic signature that changes only when something meaningful changes.
+    Deliberately excludes: timestamp, summary, exact float jitter.
+    """
+    derived = snapshot.get("derived", {})
+    policy = snapshot.get("policy", {})
+    visible_actions = sorted(
+        a.get("name", "") for a in snapshot.get("actions", []) if a.get("visible", False)
+    )
+    commands = sorted(
+        c.get("name", "") for c in actuation.get("commands", []) if isinstance(c, dict)
+    )
+    sig = {
+        "provider": snapshot["provider"]["name"],
+        "scenario": snapshot["scenario"],
+        "policy_mode": policy.get("mode", ""),
+        "policy_speech_profile": policy.get("speech_profile", ""),
+        "visible_actions": visible_actions,
+        "commands": commands,
+        "thermal_bucket": _severity_bucket(derived.get("thermal_stress", 0.0)),
+        "energy_bucket": _severity_bucket(derived.get("energy_stress", 0.0)),
+        "instability_bucket": _severity_bucket(derived.get("instability", 0.0)),
+    }
+    return safe_json_dumps(sig)
+
+
+_ACTUATION_HISTORY_MIN_INTERVAL_S = float(os.getenv("SOMA_ACTUATION_HISTORY_MIN_INTERVAL_SEC", "30"))
+
+
 def dispatch_actuation(snapshot: dict[str, Any]) -> None:
     if not ACTUATOR_ENABLED:
         return
@@ -1593,14 +1686,26 @@ def dispatch_actuation(snapshot: dict[str, Any]) -> None:
         "actuation": actuation,
         "summary": snapshot["summary"],
     }
-    signature = safe_json_dumps(payload)
-    now = time.monotonic()
-    if signature == runtime.get("actuation_last_signature") and (now - float(runtime.get("actuation_last_dispatch_at") or 0.0)) < 2.0:
-        return
 
+    # Always update the live state file
     ACTUATION_STATE_PATH.write_text(json.dumps(payload, ensure_ascii=True, indent=2), encoding="utf-8")
-    with ACTUATION_HISTORY_PATH.open("a", encoding="utf-8") as handle:
-        handle.write(json.dumps(payload, ensure_ascii=True) + "\n")
+
+    # Semantic signature excludes timestamp and jitter — dedupe works correctly
+    semantic_sig = _actuation_semantic_signature(snapshot, actuation)
+    now = time.monotonic()
+    last_sig = runtime.get("actuation_last_signature", "")
+    last_dispatch = float(runtime.get("actuation_last_dispatch_at") or 0.0)
+
+    sig_changed = semantic_sig != last_sig
+    interval_elapsed = (now - last_dispatch) >= _ACTUATION_HISTORY_MIN_INTERVAL_S
+
+    if sig_changed or interval_elapsed:
+        with ACTUATION_HISTORY_PATH.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(payload, ensure_ascii=True) + "\n")
+        runtime["actuation_last_signature"] = semantic_sig
+        runtime["actuation_last_dispatch_at"] = now
+        if _journal is not None:
+            _journal.append_actuation(payload)
 
     if ACTUATOR_ENDPOINT:
         body = safe_json_dumps(payload).encode("utf-8")
@@ -1615,9 +1720,6 @@ def dispatch_actuation(snapshot: dict[str, Any]) -> None:
                 pass
         except Exception as exc:
             actuation["endpoint_error"] = str(exc)
-
-    runtime["actuation_last_signature"] = signature
-    runtime["actuation_last_dispatch_at"] = now
 
 
 def build_llm_context(snapshot: dict[str, Any], user_text: str) -> dict[str, Any]:
@@ -1850,6 +1952,11 @@ def call_llm_raw(prompt: str, timeout_s: float = 15.0) -> str | None:
     except Exception as exc:
         print(f"[LLM-RAW] Failed: {exc}")
         return None
+
+
+# Wire call_llm_raw into nightly reflection now that it's defined
+if _nightly_reflection is not None:
+    _nightly_reflection._call_llm_raw = call_llm_raw  # type: ignore[attr-defined]
 
 
 async def broadcast_ds_turn(
@@ -2224,6 +2331,31 @@ def build_snapshot() -> dict[str, Any]:
     runtime["last_snapshot"] = snapshot
     remember_somatic_trace(snapshot)
     consolidate_memory(snapshot)
+
+    # Phase 6: slow routines (non-blocking, at most once per ~30 ticks)
+    if _routine_runner is not None and (runtime.get("_tick_count", 0) % 60 == 0):
+        try:
+            _routine_runner.maybe_run(snapshot)
+        except Exception:
+            pass
+    runtime["_tick_count"] = runtime.get("_tick_count", 0) + 1
+
+    # Phase 6: nightly reflection (checked cheaply every ~120 ticks)
+    if _nightly_reflection is not None and (runtime.get("_tick_count", 0) % 240 == 0):
+        try:
+            _nightly_reflection.check_and_run(
+                last_user_interaction_at=runtime.get("last_user_message_at", 0.0)
+            )
+        except Exception:
+            pass
+
+    # Phase 6: rotate hot journal files if needed
+    if _journal is not None and (runtime.get("_tick_count", 0) % 600 == 0):
+        try:
+            _journal.rotate_if_needed()
+        except Exception:
+            pass
+
     return snapshot
 
 
@@ -2248,6 +2380,36 @@ def build_llm_status(snapshot: dict[str, Any], override: dict[str, Any] | None =
         }
     if override:
         status.update(override)
+    return status
+
+
+def _journal_status() -> dict[str, Any]:
+    """Compact journal/autobiography/nightly status for frontend."""
+    status: dict[str, Any] = {
+        "journal_enabled": _journal is not None,
+        "autobiography_enabled": _autobiography is not None,
+        "routines_enabled": _routine_runner is not None,
+        "nightly_enabled": _nightly_reflection is not None,
+        "self_improvement_enabled": _self_improvement is not None,
+        "trace_persistence": _cfg_ref.trace_persistence,
+    }
+    if _self_improvement is not None:
+        try:
+            status["queue_summary"] = _self_improvement.get_queue_summary()
+        except Exception:
+            pass
+    if _journal is not None:
+        try:
+            hot_dir = Path(__file__).parent / "data" / "journal" / "hot"
+            sizes = {}
+            for f in hot_dir.glob("*.jsonl"):
+                sizes[f.name] = f.stat().st_size
+            total = sum(sizes.values())
+            status["hot_size_bytes"] = total
+            status["hot_size_kb"] = round(total / 1024, 1)
+            status["journal_large"] = total > 50 * 1024 * 1024
+        except Exception:
+            pass
     return status
 
 
@@ -2291,6 +2453,7 @@ def public_payload(snapshot: dict[str, Any], *, llm_override: dict[str, Any] | N
             "self_modify": _autonomous_self_mod is not None,
             "survival_policy": _autonomous_exec is not None,
         },
+        "journal": _journal_status(),
     }
 
 
@@ -2568,6 +2731,9 @@ async def handler(websocket: ServerConnection):
                     continue
 
                 snapshot = build_snapshot()
+                runtime["last_user_message_at"] = time.monotonic()
+                if _routine_runner is not None:
+                    _routine_runner.set_last_user_interaction(time.monotonic())
                 _soma_mind.on_user_message(user_text, snapshot)
                 remember_dialogue_turn("user", user_text, snapshot)
                 llm_meta_override = build_llm_status(snapshot)

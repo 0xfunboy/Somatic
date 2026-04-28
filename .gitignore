@@ -19,7 +19,10 @@ __pycache__/
 .env.*.local
 
 # Runtime state / memory / discovery state
+data/archive/
+data/autobiography/
 data/capabilities/
+data/journal/
 data/memory/
 data/mind/
 data/runtime/

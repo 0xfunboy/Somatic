@@ -6,24 +6,53 @@ Events are broadcast to the frontend and appended to cognitive_trace.jsonl.
 
 Label in UI: COGNITIVE TRACE
 Subtext: "Observable runtime trace, not hidden LLM chain-of-thought."
+
+Persistence modes (SOMA_TRACE_PERSISTENCE):
+  off       — in-memory buffer only, no disk writes
+  important — persist only meaningful phases (default)
+  all       — persist everything (debug mode)
 """
 
 from __future__ import annotations
 
 import json
+import os
 import time
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    pass  # JournalManager type hint only if needed
 
 _TRACE_FILE = Path(__file__).parent.parent / "data" / "mind" / "cognitive_trace.jsonl"
 _MAX_TRACE_BUFFER = 50  # keep in-memory for frontend
-_MAX_FILE_EVENTS_PER_SESSION = 5000  # safety cap
+
+# Phases that are meaningful and should be persisted in "important" mode
+_IMPORTANT_PHASES: frozenset[str] = frozenset({
+    "command_proposed", "command_risk_check", "command_executed",
+    "command_blocked", "skill_learned",
+    "self_modify_started", "self_modify_validated", "self_modify_reverted",
+    "reflection", "memory_update", "growth", "warning", "llm", "fallback",
+    "policy", "command_planner_request", "command_planner_response",
+    "command_result_used_in_chat",
+})
+
+# High-frequency phases that should NOT be persisted in "important" mode
+_NOISY_PHASES: frozenset[str] = frozenset({
+    "perception", "body_model", "somatic_projection", "drives",
+    "goals", "action_selection",
+})
+
+_PERSISTENCE_MODE: str = os.getenv("SOMA_TRACE_PERSISTENCE", "important").strip().lower()
+if _PERSISTENCE_MODE not in {"off", "important", "all"}:
+    _PERSISTENCE_MODE = "important"
 
 
 class CognitiveTrace:
     """
     Append-only observable trace buffer.
     Call emit() to add events; get_recent() for frontend broadcast.
+    Disk persistence controlled by SOMA_TRACE_PERSISTENCE.
     """
 
     PHASES = frozenset({
@@ -38,9 +67,15 @@ class CognitiveTrace:
         "command_planner_request", "command_planner_response", "command_result_used_in_chat",
     })
 
-    def __init__(self) -> None:
+    def __init__(self, journal: Any = None) -> None:
         self._buffer: list[dict[str, Any]] = []
-        _TRACE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        self._journal = journal  # JournalManager or None
+        if _PERSISTENCE_MODE != "off":
+            _TRACE_FILE.parent.mkdir(parents=True, exist_ok=True)
+
+    def set_journal(self, journal: Any) -> None:
+        """Attach a JournalManager after construction (avoids circular imports)."""
+        self._journal = journal
 
     def emit(
         self,
@@ -66,7 +101,7 @@ class CognitiveTrace:
         self._buffer.append(event)
         if len(self._buffer) > _MAX_TRACE_BUFFER:
             self._buffer = self._buffer[-_MAX_TRACE_BUFFER:]
-        self._append_to_file(event)
+        self._persist(event)
         return event
 
     def get_recent(self, n: int = 20, phase_filter: str | None = None) -> list[dict[str, Any]]:
@@ -74,6 +109,24 @@ class CognitiveTrace:
         if phase_filter and phase_filter != "all":
             events = [e for e in events if e["phase"] == phase_filter]
         return events[-n:]
+
+    def _persist(self, event: dict[str, Any]) -> None:
+        if _PERSISTENCE_MODE == "off":
+            return
+        phase = event["phase"]
+        if _PERSISTENCE_MODE == "important" and phase in _NOISY_PHASES:
+            return  # skip high-frequency noise
+
+        # Delegate to JournalManager if available (handles deduplication + hot file rotation)
+        if self._journal is not None:
+            try:
+                self._journal.append_trace(event)
+                return
+            except Exception:
+                pass  # fall through to direct write
+
+        # Direct fallback write to legacy cognitive_trace.jsonl
+        self._append_to_file(event)
 
     def _append_to_file(self, event: dict[str, Any]) -> None:
         try:

@@ -142,6 +142,7 @@ class AutonomousShellExecutor:
         max_memory_pct: float = 85.0,
         max_cpu_load: float = 6.0,
         package_mutation_enabled: bool = False,
+        autobiography: Any = None,
     ) -> None:
         self._trace = trace
         self._memory = memory
@@ -151,6 +152,7 @@ class AutonomousShellExecutor:
         self.max_memory_pct = max_memory_pct
         self.max_cpu_load = max_cpu_load
         self.package_mutation_enabled = package_mutation_enabled
+        self._autobiography = autobiography
 
     # ── public interface ──────────────────────────────────────────────────────
 
@@ -184,6 +186,22 @@ class AutonomousShellExecutor:
                 outputs={"reason": exc.reason},
                 level="warning",
             )
+            if self._autobiography is not None:
+                try:
+                    self._autobiography.write_event({
+                        "kind": "failure",
+                        "title": f"Survival policy blocked: {cmd[:50]}",
+                        "summary": (
+                            f"Command `{cmd[:80]}` was blocked by the survival policy. "
+                            f"Reason: {exc.reason[:200]}"
+                        ),
+                        "evidence": [f"cmd={cmd[:100]}", f"block_reason={exc.reason[:200]}"],
+                        "impact": "medium",
+                        "related_goal": "self_preservation",
+                        "emotional_tone": "stable",
+                    })
+                except Exception:
+                    pass
             return False, "", f"BLOCKED: {exc.reason}"
 
         self._trace.emit(
@@ -213,6 +231,40 @@ class AutonomousShellExecutor:
                 outputs={"cmd": cmd[:100], "skill": skill_key},
                 level="info",
             )
+            if self._autobiography is not None:
+                try:
+                    self._autobiography.write_event({
+                        "kind": "capability",
+                        "title": f"Learned capability: {skill_key}",
+                        "summary": (
+                            f"Successfully executed `{cmd[:80]}`. "
+                            f"Output: {stdout[:120].strip()}"
+                        ),
+                        "evidence": [f"cmd={cmd[:100]}", f"stdout={stdout[:100].strip()}"],
+                        "impact": "medium",
+                        "related_goal": "expand_capabilities",
+                        "emotional_tone": "curious",
+                    })
+                except Exception:
+                    pass
+        else:
+            # Failed execution — note in autobiography if there was a meaningful reason
+            if not success and stderr and self._autobiography is not None:
+                try:
+                    self._autobiography.write_event({
+                        "kind": "failure",
+                        "title": f"Command failed: {cmd[:60]}",
+                        "summary": (
+                            f"Command `{cmd[:80]}` failed. "
+                            f"Error: {stderr[:150]}"
+                        ),
+                        "evidence": [f"cmd={cmd[:100]}", f"stderr={stderr[:150]}"],
+                        "impact": "low",
+                        "related_goal": "expand_capabilities",
+                        "emotional_tone": "uncertain",
+                    })
+                except Exception:
+                    pass
 
         return success, stdout, stderr
 

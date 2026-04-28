@@ -14,7 +14,10 @@ from __future__ import annotations
 
 import time
 from collections import deque
-from typing import Any, Callable, Coroutine
+from typing import TYPE_CHECKING, Any, Callable, Coroutine
+
+if TYPE_CHECKING:
+    pass  # Autobiography imported at runtime only
 
 from soma_core.memory import SomaMemory
 from soma_core.goals import GoalStore
@@ -39,10 +42,12 @@ class ReflectionEngine:
         memory: SomaMemory,
         goal_store: GoalStore,
         llm_fn: Callable[[str], Coroutine[Any, Any, str | None]] | None = None,
+        autobiography: Any | None = None,
     ) -> None:
         self._mem = memory
         self._goals = goal_store
         self._llm_fn = llm_fn
+        self._autobiography = autobiography
         self._last_reflect_at: float = 0.0
         self._cpu_window: deque[float] = deque(maxlen=_BASELINE_WINDOW)
         self._temp_si_window: deque[float] = deque(maxlen=_BASELINE_WINDOW)
@@ -133,6 +138,26 @@ class ReflectionEngine:
             "total_reflections": total_reflections,
         }
         self._mem.append_reflection(entry)
+
+        # Write autobiography event if learning was meaningful
+        if learned and self._autobiography is not None:
+            try:
+                self._autobiography.write_event({
+                    "kind": "reflection",
+                    "title": entry["summary"][:80],
+                    "summary": entry["summary"],
+                    "evidence": learned[:3],
+                    "impact": "medium" if len(learned) >= 2 else "low",
+                    "related_goal": "understand_own_body",
+                    "emotional_tone": "curious",
+                    "body_context": {
+                        "trigger": entry["trigger"],
+                        "total_reflections": total_reflections,
+                    },
+                })
+            except Exception:
+                pass
+
         return entry
 
     # ── helpers ──────────────────────────────────────────────────────────────

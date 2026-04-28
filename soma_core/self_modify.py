@@ -20,7 +20,7 @@ import subprocess
 import tempfile
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from soma_core.executor import AutonomousShellExecutor
@@ -60,9 +60,11 @@ class AutonomousSelfModifier:
         self,
         executor: "AutonomousShellExecutor",
         trace: "CognitiveTrace",
+        autobiography: Any = None,
     ) -> None:
         self._exec = executor
         self._trace = trace
+        self._autobiography = autobiography
 
     # ── public interface ──────────────────────────────────────────────────────
 
@@ -136,6 +138,23 @@ class AutonomousSelfModifier:
             },
             level="info",
         )
+        if self._autobiography is not None:
+            try:
+                self._autobiography.write_event({
+                    "kind": "self_modification",
+                    "title": f"Self-modification validated: {rel_path}",
+                    "summary": (
+                        f"Applied and validated change to `{rel_path}`. "
+                        f"Reason: {reason[:120]}. "
+                        f"Diff: +{diff_after.count(chr(10))} lines."
+                    ),
+                    "evidence": [f"rel_path={rel_path}", f"reason={reason[:100]}"],
+                    "impact": "high",
+                    "related_goal": "self_improvement",
+                    "emotional_tone": "curious",
+                })
+            except Exception:
+                pass
         return True, f"Applied: {rel_path} ({len(new_content)} chars)"
 
     def safe_git_commit(

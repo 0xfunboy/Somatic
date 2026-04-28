@@ -67,6 +67,42 @@ class SomaConfig:
     # ── timing ────────────────────────────────────────────────────────────────
     tick_hz: float = field(default_factory=lambda: _float("SOMA_TICK_HZ", 2.0))
 
+    # ── trace persistence ─────────────────────────────────────────────────────
+    trace_persistence: str = field(default_factory=lambda: _str("SOMA_TRACE_PERSISTENCE", "important"))
+    trace_hot_max_mb: float = field(default_factory=lambda: _float("SOMA_TRACE_HOT_MAX_MB", 10.0))
+    trace_archive_gzip: bool = field(default_factory=lambda: _bool("SOMA_TRACE_ARCHIVE_GZIP", True))
+
+    # ── journal ───────────────────────────────────────────────────────────────
+    journal_enabled: bool = field(default_factory=lambda: _bool("SOMA_JOURNAL_ENABLED", True))
+    journal_hot_max_mb: float = field(default_factory=lambda: _float("SOMA_JOURNAL_HOT_MAX_MB", 25.0))
+    journal_compact_at_mb: float = field(default_factory=lambda: _float("SOMA_JOURNAL_COMPACT_AT_MB", 50.0))
+    actuation_history_min_interval_s: float = field(default_factory=lambda: _float("SOMA_ACTUATION_HISTORY_MIN_INTERVAL_SEC", 30.0))
+
+    # ── autobiography ─────────────────────────────────────────────────────────
+    autobiography_enabled: bool = field(default_factory=lambda: _bool("SOMA_AUTOBIOGRAPHY_ENABLED", True))
+
+    # ── routines ──────────────────────────────────────────────────────────────
+    routines_enabled: bool = field(default_factory=lambda: _bool("SOMA_ROUTINES_ENABLED", True))
+    routine_min_interval_s: float = field(default_factory=lambda: _float("SOMA_ROUTINE_MIN_INTERVAL_SEC", 300.0))
+    routine_idle_only: bool = field(default_factory=lambda: _bool("SOMA_ROUTINE_IDLE_ONLY", True))
+    routine_max_per_hour: int = field(default_factory=lambda: int(_float("SOMA_ROUTINE_MAX_PER_HOUR", 6.0)))
+
+    # ── nightly reflection ────────────────────────────────────────────────────
+    nightly_reflection: bool = field(default_factory=lambda: _bool("SOMA_NIGHTLY_REFLECTION", True))
+    nightly_hour: int = field(default_factory=lambda: int(_float("SOMA_NIGHTLY_HOUR", 3.0)))
+    nightly_minute: int = field(default_factory=lambda: int(_float("SOMA_NIGHTLY_MINUTE", 30.0)))
+    nightly_require_idle: bool = field(default_factory=lambda: _bool("SOMA_NIGHTLY_REQUIRE_IDLE", True))
+    nightly_compact_logs: bool = field(default_factory=lambda: _bool("SOMA_NIGHTLY_COMPACT_LOGS", True))
+    nightly_use_llm: bool = field(default_factory=lambda: _bool("SOMA_NIGHTLY_USE_LLM", True))
+
+    # ── self-improvement ──────────────────────────────────────────────────────
+    self_improvement_enabled: bool = field(default_factory=lambda: _bool("SOMA_SELF_IMPROVEMENT_ENABLED", True))
+    self_improvement_auto_apply: bool = field(default_factory=lambda: _bool("SOMA_SELF_IMPROVEMENT_AUTO_APPLY", False))
+    self_improvement_auto_rollback: bool = field(default_factory=lambda: _bool("SOMA_SELF_IMPROVEMENT_AUTO_ROLLBACK", True))
+    self_improvement_max_files: int = field(default_factory=lambda: int(_float("SOMA_SELF_IMPROVEMENT_MAX_FILES", 5.0)))
+    self_improvement_max_diff_lines: int = field(default_factory=lambda: int(_float("SOMA_SELF_IMPROVEMENT_MAX_DIFF_LINES", 500.0)))
+    self_improvement_require_tests: bool = field(default_factory=lambda: _bool("SOMA_SELF_IMPROVEMENT_REQUIRE_TESTS", True))
+
     @property
     def any_exec_active(self) -> bool:
         return self.autonomy_unlocked or self.shell_exec_enabled
