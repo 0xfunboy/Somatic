@@ -164,9 +164,11 @@ def metabolic_recovery_planner_prompt(
             "evidence": [],
             "action_type": "observe",
             "command": "",
+            "memory_update": "",
             "should_pause_growth": True,
             "should_rollback_last_mutation": False,
             "success_criteria": "",
+            "next_check": "",
             "reason": "",
         },
         [
@@ -176,5 +178,85 @@ def metabolic_recovery_planner_prompt(
             "Rollback only if instability started after mutation.",
             "Never hide failure.",
             "Write lessons when mutation caused instability.",
+        ],
+    )
+
+
+def metabolic_stabilization_planner_prompt(
+    identity: dict[str, Any],
+    metabolic_state: dict[str, Any],
+    blocker: dict[str, Any],
+    baselines: dict[str, Any],
+    recent_events: list[dict[str, Any]],
+    vector_state: dict[str, Any],
+    reward: dict[str, Any],
+) -> str:
+    return _json_prompt(
+        "Soma is metabolically constrained but still conscious. Diagnose why stabilization is needed and choose one safe evidence-producing action.",
+        {
+            "identity": identity,
+            "metabolic_state": metabolic_state,
+            "current_blocker": blocker,
+            "baselines": baselines,
+            "recent_events": recent_events,
+            "vector_state": vector_state,
+            "reward": reward,
+        },
+        {
+            "suspected_cause": "",
+            "evidence": [],
+            "action_type": "observe",
+            "command": "",
+            "memory_update": "",
+            "success_criteria": "",
+            "next_check": "",
+            "reason": "",
+        },
+        [
+            "Return only valid JSON.",
+            "You are not answering the operator.",
+            "Use the blocker exactly as given when it is causal evidence.",
+            "If source_quality is low, explain whether the problem is missing channels, unstable baselines, or insufficient evidence.",
+            "Choose one safe action: observe, memory, shell, repo_test, reduce_load, pause_growth, or cpp_check.",
+            "Shell commands must be repo-local, read-only, and non-destructive.",
+            "Do not mention nominal body telemetry unless it helps explain the blocker.",
+        ],
+    )
+
+
+def metabolic_observation_planner_prompt(
+    identity: dict[str, Any],
+    metabolic_state: dict[str, Any],
+    baselines: dict[str, Any],
+    recent_events: list[dict[str, Any]],
+    vector_state: dict[str, Any],
+    reward: dict[str, Any],
+) -> str:
+    return _json_prompt(
+        "Soma is observing itself. Produce one cheap internal decision even if the correct action is a no-op.",
+        {
+            "identity": identity,
+            "metabolic_state": metabolic_state,
+            "baselines": baselines,
+            "recent_events": recent_events,
+            "vector_state": vector_state,
+            "reward": reward,
+        },
+        {
+            "suspected_cause": "",
+            "evidence": [],
+            "action_type": "observe",
+            "command": "",
+            "memory_update": "",
+            "success_criteria": "",
+            "next_check": "",
+            "reason": "",
+        },
+        [
+            "Return only valid JSON.",
+            "You are not answering the operator.",
+            "Always produce a concrete internal decision, even if it is only observe or memory.",
+            "Prefer cheap checks, concise evidence, and explicit next_check criteria.",
+            "Do not claim growth unless the metabolic state already allows it.",
         ],
     )

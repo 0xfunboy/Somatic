@@ -10,6 +10,11 @@ python3 server.py
 
 Use this when you want the demo to run on any Linux machine with no extra services.
 
+Operator pages once the backend is up:
+
+- `http://127.0.0.1:8080/simulator.html`
+- `http://127.0.0.1:8080/tests.html`
+
 ## Real Linux Telemetry, No External LLM
 
 ```bash
@@ -23,6 +28,7 @@ Expected:
 - real CPU / memory telemetry
 - partial thermal / battery / fan telemetry when available
 - browser stays usable if some fields are missing
+- the operator test console can still run the curated validation suites
 
 ## OpenAI-Compatible Endpoint
 
@@ -71,6 +77,27 @@ Alias support:
 - `MEDIUM_DEEPSEEK_MODEL`
 
 If you pass a base URL such as `http://127.0.0.1:4000`, the runtime will expand it automatically to `/chat/completions`.
+
+## Preferred Operator Flow
+
+If you want the web frontend and runtime lifecycle handled by the repo scripts:
+
+```bash
+bash scripts/run.sh
+```
+
+Then open:
+
+- `docs/simulator.html` for the embodied runtime view
+- `docs/tests.html` for curated smoke / validation suites with readable step results
+
+Stop with:
+
+```bash
+bash scripts/stop.sh
+```
+
+The test console does not expose every raw script in `scripts/`. It groups the meaningful ones into curated suites and runs them through the live WebSocket runtime.
 
 ## Autonomy Controls
 

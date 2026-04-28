@@ -266,6 +266,11 @@ class MutationSandbox:
 
     def can_mutate(self, metabolic: dict, growth: dict, reward: dict) -> tuple[bool, list[str]]:
         blockers: list[str] = []
+        calibrated_conf = float(
+            metabolic.get("sensor_confidence_calibrated", metabolic.get("sensor_confidence", 0.0)) or 0.0
+        )
+        if calibrated_conf < 0.55:
+            blockers.append("low_calibrated_sensor_confidence")
         if not metabolic.get("growth_allowed", False):
             blockers.append("growth_not_allowed")
         if metabolic.get("recovery_required", False):

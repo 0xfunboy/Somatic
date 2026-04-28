@@ -72,7 +72,7 @@ def main() -> int:
         report = sandbox.evaluate_mutation(sandbox_path, {"objective": "noop", "file_changes": {}}, tests)
         report_path = sandbox.write_report(report)
         failures += check("writes report", report_path.exists(), str(report_path))
-        allowed, blockers = sandbox.can_mutate({"growth_allowed": True, "recovery_required": False, "self_integrity": 0.9}, {}, {"rolling_score": 0.2})
+        allowed, blockers = sandbox.can_mutate({"growth_allowed": True, "recovery_required": False, "self_integrity": 0.9, "sensor_confidence_calibrated": 0.9}, {}, {"rolling_score": 0.2})
         failures += check("mutation can be allowed when stable", allowed is True and blockers == [], str(blockers))
         failures += check("live repo unchanged", (repo / "server.py").read_text(encoding="utf-8") == "print('ok')\n")
     return failures

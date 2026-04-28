@@ -9,7 +9,9 @@ from typing import Any, Callable
 from soma_core.config import CFG
 from soma_core.internal_prompts import (
     metabolic_growth_planner_prompt,
+    metabolic_observation_planner_prompt,
     metabolic_recovery_planner_prompt,
+    metabolic_stabilization_planner_prompt,
 )
 
 
@@ -66,6 +68,7 @@ class InternalLoop:
                 "last_prompt": "",
                 "last_raw": "",
                 "last_parsed": {},
+                "last_parsed_fallback": {},
                 "last_action": {},
                 "last_evidence": {},
                 "last_reward": {},
@@ -76,7 +79,19 @@ class InternalLoop:
             },
         )
 
-    def run_growth_cycle(self, context: dict[str, Any]) -> dict[str, Any]:
+    def run_mode_cycle(self, mode: str, context: dict[str, Any]) -> dict[str, Any]:
+        normalized = str(mode or "observe").strip().lower()
+        if normalized == "recover":
+            return self.run_recovery_cycle(context)
+        if normalized == "stabilize":
+            return self.run_stabilization_cycle(context)
+        if normalized == "observe":
+            return self.run_observation_cycle(context)
+        if normalized in {"grow", "mutate", "evaluate", "reproduce"}:
+            return self.run_growth_cycle(context, mode=normalized)
+        return self.run_observation_cycle(context)
+
+    def run_growth_cycle(self, context: dict[str, Any], *, mode: str = "grow") -> dict[str, Any]:
         prompt = metabolic_growth_planner_prompt(
             context.get("identity") or {"name": "Soma", "kind": "embodied local software organism"},
             context.get("metabolic") or {},
@@ -88,7 +103,7 @@ class InternalLoop:
             context.get("vector_state") or {},
         )
         return self._run_cycle(
-            mode="grow",
+            mode=mode,
             prompt_type="growth_planner",
             prompt=prompt,
             context=context,
@@ -109,6 +124,41 @@ class InternalLoop:
             prompt=prompt,
             context=context,
             fallback=self._fallback_recovery_decision(context),
+        )
+
+    def run_stabilization_cycle(self, context: dict[str, Any]) -> dict[str, Any]:
+        prompt = metabolic_stabilization_planner_prompt(
+            context.get("identity") or {"name": "Soma", "kind": "embodied local software organism"},
+            context.get("metabolic") or {},
+            context.get("current_blocker") or {},
+            context.get("baselines") or {},
+            context.get("recent_events") or context.get("recent_failures") or [],
+            context.get("vector_state") or {},
+            context.get("reward") or {},
+        )
+        return self._run_cycle(
+            mode="stabilize",
+            prompt_type="stabilization_planner",
+            prompt=prompt,
+            context=context,
+            fallback=self._fallback_stabilization_decision(context),
+        )
+
+    def run_observation_cycle(self, context: dict[str, Any]) -> dict[str, Any]:
+        prompt = metabolic_observation_planner_prompt(
+            context.get("identity") or {"name": "Soma", "kind": "embodied local software organism"},
+            context.get("metabolic") or {},
+            context.get("baselines") or {},
+            context.get("recent_events") or context.get("recent_failures") or [],
+            context.get("vector_state") or {},
+            context.get("reward") or {},
+        )
+        return self._run_cycle(
+            mode="observe",
+            prompt_type="observation_planner",
+            prompt=prompt,
+            context=context,
+            fallback=self._fallback_observation_decision(context),
         )
 
     def parse_llm_json(self, text: str) -> dict[str, Any]:
@@ -176,7 +226,13 @@ class InternalLoop:
             return self._pack_result(decision, evidence, reward_event, memory_updates, growth_updates, next_task)
 
         if action_type == "memory":
-            summary = str(decision.get("reason") or decision.get("success_criteria") or goal or "Internal memory update").strip()
+            summary = str(
+                decision.get("memory_update")
+                or decision.get("reason")
+                or decision.get("success_criteria")
+                or goal
+                or "Internal memory update"
+            ).strip()
             if self._autobiography is not None:
                 event = self._autobiography.write_meaningful_event({
                     "kind": "bios_task",
@@ -187,8 +243,14 @@ class InternalLoop:
                 })
                 memory_updates.append({"target": "autobiography", "stored": bool(event.get("stored")), "reason": event.get("reason", "")})
             reward_event = self._record_scored_event("lesson_produced", {"summary": summary[:300]})
-            evidence = {"ok": True, "memory_update": summary[:300]}
-            next_task = "grow"
+            evidence = {
+                "ok": True,
+                "memory_update": summary[:300],
+                "evidence": decision.get("evidence") or [],
+                "success_criteria": str(decision.get("success_criteria") or ""),
+                "next_check": str(decision.get("next_check") or ""),
+            }
+            next_task = str(decision.get("next_check") or "observe")
             return self._pack_result(decision, evidence, reward_event, memory_updates, growth_updates, next_task)
 
         if action_type == "mutation_proposal":
@@ -272,8 +334,16 @@ class InternalLoop:
 
         if action_type in {"pause_growth", "observe", "answer_none", "reduce_load"}:
             reward_event = self._record_scored_event("neutral", {"action_type": action_type})
-            evidence = {"ok": True, "action_type": action_type, "reason": goal or decision.get("reason", "observe")}
-            next_task = "recover" if action_type == "pause_growth" else "observe"
+            evidence = {
+                "ok": True,
+                "action_type": action_type,
+                "reason": goal or decision.get("reason", "observe"),
+                "evidence": decision.get("evidence") or [],
+                "success_criteria": str(decision.get("success_criteria") or ""),
+                "next_check": str(decision.get("next_check") or ""),
+                "memory_update": str(decision.get("memory_update") or ""),
+            }
+            next_task = str(decision.get("next_check") or ("recover" if action_type == "pause_growth" else "observe"))
             return self._pack_result(decision, evidence, reward_event, memory_updates, growth_updates, next_task)
 
         if action_type == "rollback_mutation":
@@ -332,6 +402,7 @@ class InternalLoop:
             "prompt": prompt,
             "llm_raw": raw or "",
             "parsed": parsed or {},
+            "parsed_fallback": decision if not parsed else {},
             "fallback_used": not bool(parsed),
             "action_taken": outcome.get("action_taken", {}),
             "evidence": outcome.get("evidence", {}),
@@ -351,6 +422,7 @@ class InternalLoop:
                 "last_prompt": prompt,
                 "last_raw": raw or "",
                 "last_parsed": parsed or {},
+                "last_parsed_fallback": decision if not parsed else {},
                 "last_action": outcome.get("action_taken", {}),
                 "last_evidence": outcome.get("evidence", {}),
                 "last_reward": outcome.get("reward", invalid_event),
@@ -392,8 +464,10 @@ class InternalLoop:
             "mode": "observe",
             "action_type": "observe",
             "command": "",
+            "evidence": ["No valid internal JSON was available, so the loop fell back to a safe observation cycle."],
             "expected_power_gain": "more evidence",
             "success_criteria": "fresh evidence stored",
+            "next_check": "observe",
             "risk": "low",
             "reason": "fallback because no valid internal JSON was available",
         }
@@ -406,10 +480,55 @@ class InternalLoop:
             "mode": "recover",
             "action_type": "pause_growth",
             "command": "",
+            "memory_update": "",
+            "evidence": [str(item.get("summary") or item.get("kind") or item)[:140] for item in recent_failures[:3]],
             "should_pause_growth": True,
             "should_rollback_last_mutation": False,
             "success_criteria": "stability returns above threshold",
+            "next_check": "recover",
             "reason": "fallback recovery action because no valid internal JSON was available",
+        }
+
+    def _fallback_stabilization_decision(self, context: dict[str, Any]) -> dict[str, Any]:
+        blocker = context.get("current_blocker") or {}
+        missing = blocker.get("missing_sensor_classes") or []
+        suspected = "partial linux telemetry with stable baselines still needs confirmation"
+        if missing:
+            suspected = f"missing sensor classes: {', '.join(str(item) for item in missing[:4])}"
+        return {
+            "suspected_cause": suspected,
+            "mode": "stabilize",
+            "action_type": "observe",
+            "command": "",
+            "memory_update": "",
+            "evidence": [
+                str(blocker.get("current_blocker") or "source_quality=unknown, sensor_confidence_low"),
+                f"raw={float(blocker.get('raw_source_quality', 0.0) or 0.0):.2f}",
+                f"calibrated={float(blocker.get('sensor_confidence_calibrated', 0.0) or 0.0):.2f}",
+                f"baseline_confidence={float(blocker.get('baseline_confidence', 0.0) or 0.0):.2f}",
+            ],
+            "success_criteria": "calibrated sensor confidence and stable evidence become sufficient",
+            "next_check": "observe",
+            "reason": "fallback stabilization decision because no valid internal JSON was available",
+        }
+
+    def _fallback_observation_decision(self, context: dict[str, Any]) -> dict[str, Any]:
+        metabolic = context.get("metabolic") or {}
+        vector = context.get("vector_state") or {}
+        return {
+            "suspected_cause": "normal low-cost self-observation",
+            "mode": "observe",
+            "action_type": "observe",
+            "command": "",
+            "memory_update": "",
+            "evidence": [
+                f"mode={metabolic.get('mode', 'observe')}",
+                f"stability={float(metabolic.get('stability', 0.0) or 0.0):.2f}",
+                f"vector={vector.get('mode_contribution', 'unknown')}",
+            ],
+            "success_criteria": "fresh internal evidence is persisted",
+            "next_check": "observe",
+            "reason": "fallback observation decision because no valid internal JSON was available",
         }
 
     def _append_history(self, record: dict[str, Any]) -> None:

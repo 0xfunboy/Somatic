@@ -98,6 +98,9 @@ class BiosLoop:
             "metabolic_mode": "observe",
             "last_internal_decision": {},
             "last_internal_prompt": "",
+            "last_raw": "",
+            "last_parsed": {},
+            "last_parsed_fallback": {},
             "last_evidence": {},
         })
         self._run_times: list[float] = []
@@ -130,13 +133,19 @@ class BiosLoop:
             metabolic = snapshot.get("metabolic", {}) if isinstance(snapshot, dict) else {}
         context["metabolic"] = metabolic
         context["growth"] = growth
+        context["current_blocker"] = {
+            "current_blocker": f"source_quality={float((metabolic or {}).get('raw_source_quality', 0.0) or 0.0):.2f}, sensor_confidence_low",
+            "raw_source_quality": float((metabolic or {}).get("raw_source_quality", 0.0) or 0.0),
+            "sensor_confidence_calibrated": float((metabolic or {}).get("sensor_confidence_calibrated", (metabolic or {}).get("sensor_confidence", 0.0)) or 0.0),
+            "baseline_confidence": float((metabolic or {}).get("baseline_confidence", 0.0) or 0.0),
+            "missing_sensor_classes": list((metabolic or {}).get("missing_sensor_classes") or []),
+            "reasons": list((metabolic or {}).get("reasons") or []),
+        }
         mode = str((metabolic or {}).get("mode") or "observe")
         self._state["metabolic_mode"] = mode
         internal_record: dict[str, Any] | None = None
-        if self._internal_loop is not None and mode in {"grow", "mutate", "evaluate", "reproduce"}:
-            internal_record = self._internal_loop.run_growth_cycle(context)
-        elif self._internal_loop is not None and mode == "recover":
-            internal_record = self._internal_loop.run_recovery_cycle(context)
+        if self._internal_loop is not None:
+            internal_record = self._internal_loop.run_mode_cycle(mode, context)
 
         if internal_record is not None:
             task = {
@@ -155,13 +164,23 @@ class BiosLoop:
                 "reward": reward,
                 "internal_record": internal_record,
             }
-            self._state["last_internal_decision"] = internal_record.get("parsed") or action
+            self._state["last_internal_decision"] = (
+                internal_record.get("parsed")
+                or internal_record.get("parsed_fallback")
+                or action
+            )
             self._state["last_internal_prompt"] = str(internal_record.get("prompt") or "")
+            self._state["last_raw"] = str(internal_record.get("llm_raw") or "")
+            self._state["last_parsed"] = internal_record.get("parsed") or {}
+            self._state["last_parsed_fallback"] = internal_record.get("parsed_fallback") or {}
             self._state["last_evidence"] = evidence
         else:
             task = self._select_task(context)
             self._state["last_internal_decision"] = {}
             self._state["last_internal_prompt"] = ""
+            self._state["last_raw"] = ""
+            self._state["last_parsed"] = {}
+            self._state["last_parsed_fallback"] = {}
             result = self._execute_task(task, snapshot, context)
             self._state["last_evidence"] = result.get("data") or result.get("evidence") or {}
         self._emit("bios_task_started", f"BIOS task started: {task['task']}", outputs={"reason": task.get("reason", "")})
@@ -201,11 +220,23 @@ class BiosLoop:
         reward = self._reward_engine.summary() if self._reward_engine is not None else {}
         vector_state = snapshot.get("vector_state") or {}
         internal_status = self._internal_loop.status() if self._internal_loop is not None else {}
+        metabolic_state = snapshot.get("metabolic") or {}
+        current_blocker = {
+            "current_blocker": f"source_quality={float(metabolic_state.get('raw_source_quality', 0.0) or 0.0):.2f}, sensor_confidence_low",
+            "raw_source_quality": float(metabolic_state.get("raw_source_quality", 0.0) or 0.0),
+            "sensor_confidence_calibrated": float(metabolic_state.get("sensor_confidence_calibrated", metabolic_state.get("sensor_confidence", 0.0)) or 0.0),
+            "baseline_confidence": float(metabolic_state.get("baseline_confidence", 0.0) or 0.0),
+            "missing_sensor_classes": list(metabolic_state.get("missing_sensor_classes") or []),
+            "reasons": list(metabolic_state.get("reasons") or []),
+        }
         return {
             "growth_stage": growth.get("stage"),
             "missing_requirements": growth.get("missing_requirements", []),
+            "blockers": growth.get("blocked_by", []) or growth.get("missing_requirements", []),
             "latest_lessons": self._experience.get_lessons(limit=5) if self._experience is not None else [],
+            "lessons": self._experience.get_lessons(limit=5) if self._experience is not None else [],
             "body_baselines": baseline_summary,
+            "baselines": baseline_summary,
             "recent_failures": self._recent_failures(),
             "pending_self_improvement": [],
             "runtime_storage_status": self._runtime_storage_status(),
@@ -218,6 +249,9 @@ class BiosLoop:
             "vector_state": vector_state,
             "internal_loop": internal_status,
             "recent_events": self._recent_failures(),
+            "current_blocker": current_blocker,
+            "last_mutation": mutation_status,
+            "task_timeout_sec": self.task_timeout_sec,
             "capabilities": {
                 "survival_policy": self._executor is not None,
                 "cpp_bridge": bool(cpp_status),

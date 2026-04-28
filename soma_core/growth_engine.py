@@ -28,6 +28,8 @@ class GrowthEngine:
             "provider_real": bool(snapshot.get("provider", {}).get("is_real", False)),
             "provider_name": snapshot.get("provider", {}).get("name", "unknown"),
             "source_quality": float(snapshot.get("provider", {}).get("source_quality") or 0.0),
+            "sensor_confidence_calibrated": float((context.get("metabolic") or {}).get("sensor_confidence_calibrated", 0.0) or 0.0),
+            "baseline_confidence": float((context.get("metabolic") or {}).get("baseline_confidence", 0.0) or 0.0),
             "sample_minutes": float(context.get("sample_minutes", 0.0)),
             "baselines": context.get("baselines", {}),
             "command_agency": context.get("command_agency", {}),
@@ -184,7 +186,7 @@ class GrowthEngine:
             "stable_cycles_ready": int(metabolic.get("stable_cycles", 0)) >= CFG.growth_min_stable_bios_cycles,
             "reward_not_strongly_negative": float(reward.get("rolling_score", 0.0)) >= -0.25,
         }
-        blocked = list(metabolic.get("reasons", [])) if metabolic.get("recovery_required") else []
+        blocked = list(metabolic.get("reasons", [])) if not metabolic.get("growth_allowed", False) else []
         return self._pack(
             "metabolic_growth_ready",
             reqs,

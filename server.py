@@ -64,6 +64,7 @@ from soma_core.reward import RewardEngine
 from soma_core.power_policy import PowerPolicy
 from soma_core.internal_loop import InternalLoop
 from soma_core.introspection import IntrospectionRouter
+from soma_core.test_runner import FrontendTestRunner
 from soma_core.config import CFG as _cfg_ref
 
 WS_HOST = "0.0.0.0"
@@ -420,6 +421,7 @@ def save_consolidated_memory(memory: dict[str, Any]) -> None:
 def make_runtime_state() -> dict[str, Any]:
     return {
         "hz": TICK_HZ,
+        "ws_port": WS_PORT,
         "started_at": time.time(),
         "last_snapshot": None,
         "llm_last_success_at": None,
@@ -569,6 +571,17 @@ _autonomous_exec: AutonomousShellExecutor | None = (
         autobiography=None,  # wired below after _autobiography is created
     ) if _SHELL_ACTIVE else None
 )
+_validation_exec: AutonomousShellExecutor = _autonomous_exec or AutonomousShellExecutor(
+    _soma_mind._trace,
+    _soma_memory,
+    timeout_s=max(30.0, _cfg_ref.command_timeout_s),
+    max_output_chars=_cfg_ref.max_command_output_chars,
+    min_free_disk_gb=_cfg_ref.min_free_disk_gb,
+    max_memory_pct=_cfg_ref.max_memory_pct,
+    max_cpu_load=_cfg_ref.max_cpu_load,
+    package_mutation_enabled=False,
+    autobiography=None,
+)
 _autonomous_self_mod: AutonomousSelfModifier | None = (
     AutonomousSelfModifier(_autonomous_exec, _soma_mind._trace, autobiography=None)
     if _SELF_MOD_ACTIVE and _autonomous_exec is not None else None
@@ -604,6 +617,7 @@ if _cfg_ref.autobiography_enabled:
     # Wire autobiography into already-constructed modules
     if _autonomous_exec is not None:
         _autonomous_exec._autobiography = _autobiography
+    _validation_exec._autobiography = _autobiography
     if _autonomous_self_mod is not None:
         _autonomous_self_mod._autobiography = _autobiography
     _soma_mind._autobiography = _autobiography
@@ -695,6 +709,29 @@ def _safe_shell_run(cmd: str, reason: str = "", expected_effect: str = "") -> tu
     if _autonomous_exec is not None:
         return _autonomous_exec.propose(cmd, reason=reason, expected_effect=expected_effect)
     return _shell_exec.run(cmd)
+
+
+def _run_validation_command(cmd: str, timeout_s: float) -> tuple[bool, str, str]:
+    if timeout_s <= _validation_exec.timeout_s:
+        return _validation_exec.run_raw(cmd)
+    temp_exec = AutonomousShellExecutor(
+        _soma_mind._trace,
+        _soma_memory,
+        timeout_s=timeout_s,
+        max_output_chars=_cfg_ref.max_command_output_chars,
+        min_free_disk_gb=_cfg_ref.min_free_disk_gb,
+        max_memory_pct=_cfg_ref.max_memory_pct,
+        max_cpu_load=_cfg_ref.max_cpu_load,
+        package_mutation_enabled=False,
+        autobiography=_autobiography,
+    )
+    return temp_exec.run_raw(cmd)
+
+
+_frontend_test_runner = FrontendTestRunner(
+    execute_command=_run_validation_command,
+    ws_port_getter=lambda: int(runtime.get("ws_port", WS_PORT) or WS_PORT),
+)
 
 
 # Serializes all internal LLM calls (discovery + capability checks) so they
@@ -2511,6 +2548,7 @@ def build_snapshot() -> dict[str, Any]:
             "mutation": snapshot["mutation_status"],
             "cpp_bridge": snapshot["cpp_bridge_status"],
             "command_agency": snapshot["command_agency"],
+            "baselines": snapshot["baselines"],
             "llm_mode": snapshot["llm"].get("mode"),
             "llm_available": snapshot["llm"].get("available"),
             "capabilities": {"survival_policy": _autonomous_exec is not None},
@@ -2594,6 +2632,7 @@ def build_snapshot() -> dict[str, Any]:
                     "mutation": snapshot["mutation_status"],
                     "cpp_bridge": snapshot["cpp_bridge_status"],
                     "command_agency": snapshot["command_agency"],
+                    "baselines": snapshot["baselines"],
                     "llm_mode": snapshot["llm"].get("mode"),
                     "llm_available": snapshot["llm"].get("available"),
                     "capabilities": {"survival_policy": _autonomous_exec is not None},
@@ -2707,6 +2746,7 @@ def public_payload(snapshot: dict[str, Any], *, llm_override: dict[str, Any] | N
         "vector_state": snapshot.get("vector_state", {}),
         "reward": snapshot.get("reward", {}),
         "internal_loop": snapshot.get("internal_loop", {}),
+        "test_runner": _frontend_test_runner.status(),
         "autobiography": snapshot.get("autobiography_quality", {}),
         "life_drive": snapshot.get("life_drive", {}),
         "baselines": snapshot.get("baselines", {}),
@@ -3126,6 +3166,81 @@ async def handler(websocket: ServerConnection):
                 except (TypeError, ValueError):
                     pass
 
+            elif mtype == "test_catalog":
+                await websocket.send(
+                    safe_json_dumps(
+                        {
+                            "type": "test_catalog",
+                            "suites": _frontend_test_runner.catalog(),
+                            "runner": _frontend_test_runner.status(),
+                        }
+                    )
+                )
+
+            elif mtype == "test_run_status":
+                await websocket.send(
+                    safe_json_dumps(
+                        {
+                            "type": "test_run_status",
+                            "runner": _frontend_test_runner.status(),
+                        }
+                    )
+                )
+
+            elif mtype == "test_run":
+                suite_id = str(msg.get("suite_id") or "").strip()
+                if not suite_id:
+                    await websocket.send(
+                        safe_json_dumps(
+                            {
+                                "type": "test_run_rejected",
+                                "suite_id": "",
+                                "reason": "missing_suite_id",
+                                "runner": _frontend_test_runner.status(),
+                            }
+                        )
+                    )
+                    continue
+                if _frontend_test_runner.status().get("busy"):
+                    await websocket.send(
+                        safe_json_dumps(
+                            {
+                                "type": "test_run_rejected",
+                                "suite_id": suite_id,
+                                "reason": "runner_busy",
+                                "runner": _frontend_test_runner.status(),
+                            }
+                        )
+                    )
+                    continue
+
+                await websocket.send(
+                    safe_json_dumps(
+                        {
+                            "type": "test_run_accepted",
+                            "suite_id": suite_id,
+                            "runner": _frontend_test_runner.status(),
+                        }
+                    )
+                )
+
+                async def _emit_test_event(event: dict[str, Any]) -> None:
+                    await broadcast(event)
+
+                async def _run_suite_task() -> None:
+                    result = await _frontend_test_runner.run_suite(suite_id, emit=_emit_test_event)
+                    if not result.get("ok", True):
+                        await broadcast(
+                            {
+                                "type": "test_run_rejected",
+                                "suite_id": suite_id,
+                                "reason": result.get("reason", "unknown_error"),
+                                "runner": _frontend_test_runner.status(),
+                            }
+                        )
+
+                asyncio.create_task(_run_suite_task())
+
             elif mtype == "shell_exec":
                 # Operator-requested shell command — routed through survival policy.
                 cmd = str(msg.get("cmd") or "").strip()
@@ -3374,6 +3489,7 @@ async def main():
     parser.add_argument("--host", default=WS_HOST)
     parser.add_argument("--port", type=int, default=WS_PORT)
     args = parser.parse_args()
+    runtime["ws_port"] = int(args.port)
 
     print(f"[LSF] Starting WebSocket server on ws://{args.host}:{args.port}")
     print(f"[LSF] Sensor dims: {SENSOR_DIM} | Latent dims: {LLM_EMB_DIM}")

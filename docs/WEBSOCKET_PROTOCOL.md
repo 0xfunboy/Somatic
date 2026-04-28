@@ -11,6 +11,15 @@ The protocol is designed so that the current Python runtime and a future C++ dae
 - `chat`
 - `chat_reply`
 - `autonomous_event`
+- `test_catalog`
+- `test_run_status`
+- `test_run`
+- `test_run_accepted`
+- `test_run_started`
+- `test_step_started`
+- `test_step_result`
+- `test_run_completed`
+- `test_run_rejected`
 
 ## Tick
 
@@ -176,6 +185,16 @@ Server -> browser:
 - `llm`
 - `affect`
 - `actions`
+- `autobiography`
+- `growth`
+- `bios`
+- `mutation`
+- `cpp_bridge`
+- `metabolic`
+- `vector_state`
+- `reward`
+- `internal_loop`
+- `test_runner`
 
 ## Chat Request
 
@@ -253,3 +272,173 @@ Server -> browser:
 ```
 
 Autonomous events are event-based, not periodic spam.
+
+## Operator Test Console
+
+`docs/tests.html` is the operator-facing validation page. It does not expose every raw script individually; it consumes a curated suite catalog from the runtime.
+
+### Catalog Request
+
+Browser -> server:
+
+```json
+{
+  "type": "test_catalog"
+}
+```
+
+Server -> browser:
+
+```json
+{
+  "type": "test_catalog",
+  "suites": [
+    {
+      "id": "runtime_smoke",
+      "label": "Runtime Smoke",
+      "description": "Checks the live WebSocket runtime and repo-local storage report.",
+      "category": "live",
+      "estimated_minutes": 0.6,
+      "requires_live_backend": true,
+      "steps": [
+        {
+          "id": "ws_smoke",
+          "title": "WebSocket smoke",
+          "description": "Confirms init, tick, and chat_reply over the running backend.",
+          "timeout_sec": 30.0
+        }
+      ]
+    }
+  ],
+  "runner": {
+    "busy": false,
+    "last_status": "idle"
+  }
+}
+```
+
+### Runner Status Request
+
+Browser -> server:
+
+```json
+{
+  "type": "test_run_status"
+}
+```
+
+Server -> browser:
+
+```json
+{
+  "type": "test_run_status",
+  "runner": {
+    "busy": false,
+    "active_suite_id": "",
+    "active_step_id": "",
+    "last_suite_id": "phase9_core",
+    "last_status": "passed",
+    "last_summary": "Phase 9 Core Validation: all 6/6 step(s) passed.",
+    "passed_steps": 6,
+    "failed_steps": 0,
+    "total_steps": 6,
+    "history": []
+  }
+}
+```
+
+### Run Request
+
+Browser -> server:
+
+```json
+{
+  "type": "test_run",
+  "suite_id": "runtime_smoke"
+}
+```
+
+The runtime will either reject the request immediately or emit an execution stream.
+
+### Execution Stream
+
+Server -> browser:
+
+```json
+{
+  "type": "test_run_started",
+  "suite": {
+    "id": "runtime_smoke",
+    "label": "Runtime Smoke",
+    "category": "live",
+    "estimated_minutes": 0.6,
+    "requires_live_backend": true,
+    "step_count": 2
+  },
+  "runner": {
+    "busy": true,
+    "active_suite_id": "runtime_smoke"
+  }
+}
+```
+
+```json
+{
+  "type": "test_step_started",
+  "suite_id": "runtime_smoke",
+  "step_index": 1,
+  "step_total": 2,
+  "step": {
+    "id": "ws_smoke",
+    "title": "WebSocket smoke",
+    "description": "Confirms init, tick, and chat_reply over the running backend.",
+    "timeout_sec": 30.0
+  }
+}
+```
+
+```json
+{
+  "type": "test_step_result",
+  "suite_id": "runtime_smoke",
+  "step_index": 1,
+  "step_total": 2,
+  "step": {
+    "id": "ws_smoke",
+    "title": "WebSocket smoke",
+    "ok": true,
+    "duration_ms": 842.1,
+    "summary": "WebSocket smoke passed via linux; llm=deepseek.",
+    "command": "python3 scripts/ws_smoke_test.py --host 127.0.0.1 --port 8765 --timeout 20 --text 'show your last BIOS internal prompt'",
+    "stdout_preview": "{\"ok\": true}",
+    "stderr_preview": "",
+    "json_preview": {
+      "ok": true
+    }
+  }
+}
+```
+
+```json
+{
+  "type": "test_run_completed",
+  "suite_id": "runtime_smoke",
+  "suite_label": "Runtime Smoke",
+  "ok": true,
+  "summary": "Runtime Smoke: all 2/2 step(s) passed.",
+  "results": [],
+  "runner": {
+    "busy": false,
+    "last_status": "passed"
+  }
+}
+```
+
+Rejected requests return:
+
+```json
+{
+  "type": "test_run_rejected",
+  "reason": "runner_busy"
+}
+```

@@ -299,6 +299,10 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
       <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
       PAUSE
     </button>
+    <a href="tests.html" class="tb-link"><button class="tb-btn">
+      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 12l2 2 4-4"/><path d="M21 12c0 4.97-4.03 9-9 9s-9-4.03-9-9 4.03-9 9-9 9 4.03 9 9z"/></svg>
+      TESTS
+    </button></a>
     <a href="index.html" class="tb-link"><button class="tb-btn">
       <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
       DOCS
@@ -910,6 +914,7 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
         <div class="mind-row"><span class="mind-lbl">Metabolic</span><span class="mind-val" id="mp-metabolic-mode">--</span></div>
         <div class="mind-row"><span class="mind-lbl">Stability</span><span class="mind-val" id="mp-stability">--</span></div>
         <div class="mind-row"><span class="mind-lbl">Stress</span><span class="mind-val" id="mp-stress">--</span></div>
+        <div class="mind-row"><span class="mind-lbl">Sensor Conf</span><span class="mind-val" id="mp-sensor-confidence">--</span></div>
         <div class="mind-row"><span class="mind-lbl">Growth OK</span><span class="mind-val" id="mp-growth-allowed">--</span></div>
         <div class="mind-row"><span class="mind-lbl">Recovery</span><span class="mind-val" id="mp-recovery">--</span></div>
         <div class="mind-row"><span class="mind-lbl">Reward</span><span class="mind-val" id="mp-reward-trend">--</span></div>
@@ -1561,11 +1566,17 @@ function renderMindPane() {
   set('mp-metabolic-mode', String(growth.metabolic_mode || metabolic.mode || '--').replace(/_/g,' ').toUpperCase());
   set('mp-stability', metabolic.stability != null ? Number(metabolic.stability).toFixed(3) : '--');
   set('mp-stress', metabolic.stress != null ? Number(metabolic.stress).toFixed(3) : '--');
+  set(
+    'mp-sensor-confidence',
+    metabolic.raw_source_quality != null || metabolic.sensor_confidence_calibrated != null
+      ? `raw=${fmtMaybe(metabolic.raw_source_quality, 2)} calibrated=${fmtMaybe(metabolic.sensor_confidence_calibrated ?? metabolic.sensor_confidence, 2)}`
+      : '--'
+  );
   set('mp-growth-allowed', growth.growth_allowed === true || metabolic.growth_allowed === true ? 'YES' : 'NO');
   set('mp-recovery', growth.recovery_required === true || metabolic.recovery_required === true ? 'YES' : 'NO');
   set('mp-reward-trend', reward.trend != null || reward.rolling_score != null ? `${fmtSigned(reward.trend ?? 0, 2)} / ${fmtSigned(reward.rolling_score ?? 0, 2)}` : '--');
   set('mp-vector', vectorState.mode_contribution ? `${String(vectorState.mode_contribution).toUpperCase()} (${fmtMaybe(vectorState.vector_drift, 2)})` : '--');
-  set('mp-internal', internalLoop.last_prompt_type ? `${String(internalLoop.last_prompt_type).replace(/_/g,' ').toUpperCase()} → ${String(internalLoop.last_next_task || 'idle').replace(/_/g,' ')}` : 'NO GROWTH ACTION RECENTLY');
+  set('mp-internal', internalLoop.last_prompt_type ? `${String(internalLoop.last_prompt_type).replace(/_/g,' ').toUpperCase()} → ${String(internalLoop.last_next_task || 'idle').replace(/_/g,' ')}` : 'NO INTERNAL ACTION RECENTLY');
   set('mp-last-mutation', mutation.last_decision ? String(mutation.last_decision).replace(/_/g,' ').toUpperCase() : (mutation.last_blockers && mutation.last_blockers.length ? `BLOCKED: ${mutation.last_blockers.join(', ')}` : '--'));
   set('mp-completed', Array.isArray(growth.completed_requirements) ? growth.completed_requirements.length : '--');
   set('mp-missing', Array.isArray(growth.missing_requirements) && growth.missing_requirements.length

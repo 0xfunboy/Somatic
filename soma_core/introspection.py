@@ -44,14 +44,24 @@ class IntrospectionRouter:
         if not low:
             return None
         if "last bios internal prompt" in low or "last internal prompt" in low:
+            bios = _load_json(self._mind_root / "bios_state.json", {})
             state = _load_json(self._mind_root / "internal_loop_state.json", {})
-            prompt = str(state.get("last_prompt") or "").strip()
+            prompt = str(bios.get("last_internal_prompt") or state.get("last_prompt") or "").strip()
             return self._ok("introspection.last_bios_prompt", prompt or "No internal BIOS prompt has been persisted yet.", {"prompt": prompt})
         if "last internal deepseek json" in low or "last deepseek json" in low or "last internal json" in low:
             state = _load_json(self._mind_root / "internal_loop_state.json", {})
-            parsed = state.get("last_parsed") or {}
+            bios = _load_json(self._mind_root / "bios_state.json", {})
+            parsed = state.get("last_parsed") or bios.get("last_parsed") or {}
+            fallback = state.get("last_parsed_fallback") or bios.get("last_parsed_fallback") or {}
             text = json.dumps(parsed, ensure_ascii=False, indent=2) if parsed else "No internal DeepSeek JSON has been persisted yet."
-            return self._ok("introspection.last_internal_json", text, {"parsed": parsed})
+            if not parsed and fallback:
+                text = json.dumps(fallback, ensure_ascii=False, indent=2)
+            return self._ok("introspection.last_internal_json", text, {"parsed": parsed, "fallback": fallback})
+        if ("what evidence did" in low and "bios" in low) or "last bios evidence" in low:
+            bios = _load_json(self._mind_root / "bios_state.json", {})
+            evidence = bios.get("last_evidence") or {}
+            text = json.dumps(evidence, ensure_ascii=False, indent=2) if evidence else "No BIOS evidence has been recorded yet."
+            return self._ok("introspection.last_bios_evidence", text, {"evidence": evidence})
         if "what task did your bios run last" in low or "last bios task" in low:
             bios = _load_json(self._mind_root / "bios_state.json", {})
             task = str(bios.get("last_task") or "").strip()
@@ -59,11 +69,6 @@ class IntrospectionRouter:
             if not task:
                 return self._ok("introspection.last_bios_task", "No BIOS task has been recorded yet.", {})
             return self._ok("introspection.last_bios_task", f"Last BIOS task: {task}. Result: {result or 'n/a'}.", bios)
-        if ("what evidence did" in low and "bios" in low) or "last bios evidence" in low:
-            bios = _load_json(self._mind_root / "bios_state.json", {})
-            evidence = bios.get("last_evidence") or {}
-            text = json.dumps(evidence, ensure_ascii=False, indent=2) if evidence else "No BIOS evidence has been recorded yet."
-            return self._ok("introspection.last_bios_evidence", text, {"evidence": evidence})
         if "what memory did it update" in low or "last memory update" in low:
             state = _load_json(self._mind_root / "internal_loop_state.json", {})
             memory_updates = state.get("last_memory_updates") or []
@@ -98,8 +103,17 @@ class IntrospectionRouter:
             metabolic = _load_json(self._mind_root / "metabolic_state.json", {})
             mutation = _load_json(self._mind_root / "mutation_state.json", {})
             blockers = []
-            blockers.extend(list(metabolic.get("reasons") or []))
+            if metabolic.get("recovery_required") or not metabolic.get("growth_allowed", False):
+                blockers.extend(
+                    [
+                        str(item)
+                        for item in (metabolic.get("reasons") or [])
+                        if str(item) not in {"growth_allowed", "stable_metabolism"}
+                    ]
+                )
             blockers.extend(list(mutation.get("last_blockers") or []))
+            if float(metabolic.get("sensor_confidence_calibrated", 0.0) or 0.0) < 0.55 and "low_calibrated_sensor_confidence" not in blockers:
+                blockers.append("low_calibrated_sensor_confidence")
             if not blockers:
                 blockers = ["no_recorded_mutation_blocker"]
             return self._ok("introspection.mutation_blockers", f"Mutation blockers: {', '.join(blockers[:8])}.", {"blockers": blockers})
@@ -122,6 +136,10 @@ class IntrospectionRouter:
                 "growth_allowed": metabolic.get("growth_allowed"),
                 "recovery_required": metabolic.get("recovery_required"),
                 "reasons": metabolic.get("reasons", []),
+                "raw_source_quality": metabolic.get("raw_source_quality"),
+                "sensor_confidence_calibrated": metabolic.get("sensor_confidence_calibrated"),
+                "baseline_confidence": metabolic.get("baseline_confidence"),
+                "missing_sensor_classes": metabolic.get("missing_sensor_classes", []),
             }
             return self._ok("introspection.metabolic_vector", json.dumps(compact, ensure_ascii=False, indent=2), compact)
         if "reward trend" in low or "reward state" in low:

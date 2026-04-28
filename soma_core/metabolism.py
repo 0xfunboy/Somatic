@@ -39,6 +39,37 @@ def _avg(values: list[float]) -> float:
     return sum(values) / len(values)
 
 
+_SENSOR_CLASS_FIELDS: dict[str, tuple[str, ...]] = {
+    "compute": ("cpu_percent", "cpu_count_logical", "cpu_freq_mhz", "load_1"),
+    "memory": ("memory_percent", "memory_total_gb", "swap_percent"),
+    "storage": ("disk_used_percent", "disk_busy_percent", "disk_total_gb", "disk_read_mb_s", "disk_write_mb_s"),
+    "network": ("net_mbps", "net_up_mbps", "net_down_mbps"),
+    "thermal": ("cpu_temp", "disk_temp", "thermal_sensors_c"),
+    "power": ("cpu_power_w", "ac_online", "battery_percent"),
+    "cooling": ("fan_rpm", "fan_sensors_rpm"),
+    "gpu": ("gpu_temp", "gpu_power_w", "gpu_util_percent", "gpu_memory_percent", "gpu_memory_total_mb"),
+}
+
+
+def _field_available(value: Any) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, (list, tuple, set, dict)):
+        return bool(value)
+    return True
+
+
+def _sensor_inventory(system: dict[str, Any]) -> tuple[int, list[str]]:
+    available: list[str] = []
+    missing: list[str] = []
+    for sensor_class, fields in _SENSOR_CLASS_FIELDS.items():
+        if any(_field_available(system.get(field)) for field in fields):
+            available.append(sensor_class)
+        else:
+            missing.append(sensor_class)
+    return len(available), missing
+
+
 class MetabolicEngine:
     def __init__(
         self,
@@ -75,6 +106,16 @@ class MetabolicEngine:
                 "memory_margin": 0.0,
                 "disk_margin": 0.0,
                 "sensor_confidence": 0.0,
+                "raw_source_quality": 0.0,
+                "available_sensor_count": 0,
+                "available_sensor_ratio": 0.0,
+                "stable_baseline_confidence": 0.0,
+                "baseline_confidence": 0.0,
+                "sensor_confidence_calibrated": 0.0,
+                "raw_source_quality_low": True,
+                "calibrated_sensor_confidence_ok": False,
+                "calibrated_sensor_confidence_low": True,
+                "missing_sensor_classes": [],
                 "llm_confidence": 0.0,
                 "self_integrity": 0.0,
                 "vector_stability": 0.0,
@@ -87,6 +128,7 @@ class MetabolicEngine:
                 "stable_cycles": 0,
                 "mode": "observe",
                 "reasons": [],
+                "sensor_confidence_reasons": {},
                 "last_mutation_effect": {},
                 "window": {"avg_stability": 0.0, "avg_stress": 0.0, "stable_cycles": 0, "samples": 0},
             },
@@ -116,6 +158,7 @@ class MetabolicEngine:
         cpp_status = context.get("cpp_bridge") or snapshot.get("cpp_bridge_status", {}) or {}
         command_agency = context.get("command_agency") or snapshot.get("command_agency", {}) or {}
         capabilities = context.get("capabilities") or {}
+        baselines = context.get("baselines") or snapshot.get("baselines", {}) or {}
 
         thermal_stress = _clamp01(derived.get("thermal_stress"))
         energy_stress = _clamp01(derived.get("energy_stress"))
@@ -128,7 +171,34 @@ class MetabolicEngine:
         vector_anomaly = _clamp01(vector_state.get("vector_anomaly"))
         vector_drift = _clamp01(vector_state.get("vector_drift"))
         vector_stability = _clamp01(vector_state.get("vector_stability", 0.5 if vector_state else 0.0))
-        sensor_confidence = _clamp01(provider.get("source_quality", system.get("source_quality", 0.0)))
+        raw_source_quality = _clamp01(provider.get("source_quality", system.get("source_quality", 0.0)))
+        available_sensor_count, missing_sensor_classes = _sensor_inventory(system)
+        available_sensor_ratio = available_sensor_count / max(1, len(_SENSOR_CLASS_FIELDS))
+        baseline_keys = (baselines.get("keys") or {}) if isinstance(baselines, dict) else {}
+        baseline_candidates = [
+            float((baseline_keys.get(key) or {}).get("confidence", 0.0) or 0.0)
+            for key in ("idle_cpu_percent", "cpu_temp_c", "disk_temp_c", "ram_idle_percent", "source_quality")
+        ]
+        stable_baseline_confidence = _clamp01(_avg([value for value in baseline_candidates if value > 0.0]))
+        sensor_confidence_calibrated = max(
+            raw_source_quality,
+            _clamp01(
+                (raw_source_quality * 0.20)
+                + (available_sensor_ratio * 0.35)
+                + (stable_baseline_confidence * 0.45)
+            ),
+        )
+        sensor_confidence = sensor_confidence_calibrated
+        raw_source_quality_low = raw_source_quality < 0.55
+        calibrated_sensor_confidence_ok = sensor_confidence_calibrated >= 0.55
+        calibrated_sensor_confidence_low = not calibrated_sensor_confidence_ok
+        sensor_confidence_reasons = {
+            "raw_source_quality_low": raw_source_quality_low,
+            "calibrated_sensor_confidence_ok": calibrated_sensor_confidence_ok,
+            "calibrated_sensor_confidence_low": calibrated_sensor_confidence_low,
+            "missing_sensor_classes": missing_sensor_classes,
+            "baseline_confidence": round(stable_baseline_confidence, 4),
+        }
 
         llm_mode = str((snapshot.get("llm") or {}).get("mode") or context.get("llm_mode") or "").lower()
         llm_available = bool((snapshot.get("llm") or {}).get("available")) or bool(context.get("llm_available"))
@@ -215,7 +285,7 @@ class MetabolicEngine:
             stability >= self._growth_threshold
             and stress <= self._max_stress
             and self_integrity >= self._min_self_integrity
-            and sensor_confidence >= 0.55
+            and sensor_confidence_calibrated >= 0.55
             and vector_anomaly < CFG.vector_drift_threshold
         )
         stable_cycles = int(self._state.get("stable_cycles", 0) or 0)
@@ -231,7 +301,7 @@ class MetabolicEngine:
             stability=stability,
             stress=stress,
             self_integrity=self_integrity,
-            sensor_confidence=sensor_confidence,
+            sensor_confidence=sensor_confidence_calibrated,
             vector_anomaly=vector_anomaly,
             stable_cycles=stable_cycles,
             recovery_required=recovery_required,
@@ -242,9 +312,9 @@ class MetabolicEngine:
         if recovery_required:
             mode = "recover"
             mode_reasons = recovery_reasons
-        elif sensor_confidence < 0.55:
-            mode = "stabilize" if stress > 0.2 else "observe"
-            mode_reasons = ["low_sensor_confidence"]
+        elif sensor_confidence_calibrated < 0.55:
+            mode = "stabilize" if stress > 0.2 or stable_baseline_confidence < 0.55 else "observe"
+            mode_reasons = ["calibrated_sensor_confidence_low"]
         elif stability < self._growth_threshold:
             mode = "stabilize"
             mode_reasons = growth_blockers or ["stability_below_threshold"]
@@ -274,6 +344,16 @@ class MetabolicEngine:
             "memory_margin": memory_margin,
             "disk_margin": disk_margin,
             "sensor_confidence": round(sensor_confidence, 4),
+            "raw_source_quality": round(raw_source_quality, 4),
+            "available_sensor_count": int(available_sensor_count),
+            "available_sensor_ratio": round(available_sensor_ratio, 4),
+            "stable_baseline_confidence": round(stable_baseline_confidence, 4),
+            "baseline_confidence": round(stable_baseline_confidence, 4),
+            "sensor_confidence_calibrated": round(sensor_confidence_calibrated, 4),
+            "raw_source_quality_low": raw_source_quality_low,
+            "calibrated_sensor_confidence_ok": calibrated_sensor_confidence_ok,
+            "calibrated_sensor_confidence_low": calibrated_sensor_confidence_low,
+            "missing_sensor_classes": missing_sensor_classes,
             "llm_confidence": round(llm_confidence, 4),
             "self_integrity": self_integrity,
             "vector_stability": round(vector_stability, 4),
@@ -286,6 +366,7 @@ class MetabolicEngine:
             "stable_cycles": stable_cycles,
             "mode": mode,
             "reasons": mode_reasons,
+            "sensor_confidence_reasons": sensor_confidence_reasons,
         }
 
         self._window.append(record)
@@ -373,7 +454,7 @@ class MetabolicEngine:
         if self_integrity < self._min_self_integrity:
             blockers.append("self_integrity_below_min")
         if sensor_confidence < 0.55:
-            blockers.append("sensor_confidence_low")
+            blockers.append("calibrated_sensor_confidence_low")
         if vector_anomaly >= CFG.vector_drift_threshold:
             blockers.append("vector_anomaly_high")
         if stable_cycles < CFG.growth_min_stable_bios_cycles:

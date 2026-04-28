@@ -1,0 +1,672 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>LSF Operator Tests</title>
+<link rel="icon" type="image/x-icon" href="assets/favicon.ico"/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;800&family=Share+Tech+Mono&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+<style>
+:root{
+  --bg:#030d1c;--bg2:#071828;--bg3:#0d2040;--bg4:#112248;
+  --cyan:#00cfff;--cyan2:#00a8d4;--purple:#7040e8;--purple2:#9060ff;
+  --green:#22c55e;--red:#ef4444;--orange:#f97316;--yellow:#eab308;
+  --text:#e2e8f0;--text2:#94a3b8;--text3:#475569;
+  --border:rgba(0,207,255,.14);--border2:rgba(0,207,255,.08);
+  --mono:'Share Tech Mono',monospace;
+  --sans:'Inter',sans-serif;
+  --head:'Orbitron',sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:100vh;overflow-x:hidden}
+body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(rgba(0,207,255,.028) 1px,transparent 1px),linear-gradient(90deg,rgba(0,207,255,.028) 1px,transparent 1px);background-size:32px 32px;pointer-events:none;z-index:0}
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-track{background:var(--bg)}
+::-webkit-scrollbar-thumb{background:var(--bg3);border-radius:3px}
+
+nav{position:fixed;top:0;left:0;right:0;height:56px;display:flex;align-items:center;z-index:50;background:rgba(3,13,28,.9);backdrop-filter:blur(16px);border-bottom:1px solid var(--border)}
+.nav-logo{display:flex;align-items:center;gap:12px;padding:0 24px;height:100%;border-right:1px solid var(--border)}
+.nav-logo img{height:28px}
+.nav-logo span{font-family:var(--head);font-size:11px;letter-spacing:.14em;color:var(--cyan);text-transform:uppercase}
+.nav-links{display:flex;align-items:center;gap:0;flex:1}
+.nav-links a{height:56px;display:flex;align-items:center;padding:0 18px;border-right:1px solid var(--border2);font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--text2);text-decoration:none;transition:color .2s,background .2s}
+.nav-links a:hover,.nav-links a.active{color:var(--cyan);background:rgba(0,207,255,.06)}
+.nav-meta{margin-left:auto;padding:0 20px;display:flex;align-items:center;gap:10px}
+.nav-chip{display:inline-flex;align-items:center;gap:8px;padding:5px 10px;border:1px solid var(--border);border-radius:999px;font-family:var(--mono);font-size:11px;color:var(--text2);letter-spacing:.02em}
+.nav-chip::before{content:'';width:7px;height:7px;border-radius:50%;background:var(--text3)}
+.nav-chip.live::before{background:var(--green);box-shadow:0 0 8px var(--green)}
+.nav-chip.busy::before{background:var(--yellow);box-shadow:0 0 8px var(--yellow)}
+.nav-chip.fail::before{background:var(--red);box-shadow:0 0 8px var(--red)}
+
+main{position:relative;z-index:1;padding:88px 24px 32px}
+.shell{max-width:1480px;margin:0 auto;display:flex;flex-direction:column;gap:20px}
+.hero{display:grid;grid-template-columns:minmax(280px,1.15fr) minmax(260px,.85fr);gap:18px}
+.hero-card,.panel{background:linear-gradient(180deg,rgba(7,24,40,.96),rgba(3,13,28,.98));border:1px solid var(--border);border-radius:10px;overflow:hidden;box-shadow:0 10px 40px rgba(0,0,0,.18)}
+.hero-main{padding:24px 24px 22px}
+.eyebrow{font-family:var(--head);font-size:10px;letter-spacing:.24em;text-transform:uppercase;color:var(--cyan);margin-bottom:12px}
+.hero-title{font-family:var(--head);font-size:clamp(28px,3vw,40px);line-height:1.08;letter-spacing:-.02em;background:linear-gradient(135deg,#fff 24%,var(--cyan) 70%,var(--purple2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.hero-desc{margin-top:14px;font-size:15px;line-height:1.75;color:var(--text2);max-width:760px}
+.hero-note{margin-top:18px;padding:12px 14px;border:1px solid var(--border2);border-radius:8px;background:rgba(0,207,255,.04);font-size:13px;line-height:1.65;color:var(--text2)}
+.hero-actions{margin-top:18px;display:flex;flex-wrap:wrap;gap:10px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:10px 16px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--text);cursor:pointer;font-family:var(--head);font-size:10px;letter-spacing:.12em;text-transform:uppercase;text-decoration:none;transition:background .15s,border-color .15s,color .15s}
+.btn:hover{background:rgba(0,207,255,.07);border-color:rgba(0,207,255,.28);color:var(--cyan)}
+.btn-primary{border-color:rgba(0,207,255,.3);background:rgba(0,207,255,.12);color:var(--cyan)}
+.btn-primary:hover{background:rgba(0,207,255,.2)}
+.btn[disabled]{opacity:.45;cursor:not-allowed}
+.hero-side{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--border)}
+.hero-stat{background:rgba(7,24,40,.98);padding:16px}
+.hero-stat-label{font-family:var(--head);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--text3);margin-bottom:7px}
+.hero-stat-value{font-family:var(--head);font-size:18px;letter-spacing:-.02em;color:var(--text)}
+.hero-stat-sub{font-size:12px;color:var(--text2);line-height:1.5;margin-top:6px}
+
+.grid{display:grid;grid-template-columns:minmax(340px,420px) minmax(0,1fr);gap:20px;min-height:0}
+.panel-header{padding:16px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:12px;background:rgba(13,32,64,.46)}
+.panel-title{font-family:var(--head);font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--cyan)}
+.panel-sub{font-family:var(--mono);font-size:11px;color:var(--text3)}
+.panel-body{padding:16px 18px}
+
+.stack{display:flex;flex-direction:column;gap:16px}
+.suite-card{border:1px solid var(--border2);border-radius:8px;padding:15px 15px 14px;background:rgba(0,207,255,.03)}
+.suite-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.suite-title{font-family:var(--head);font-size:13px;letter-spacing:.05em;color:var(--text)}
+.suite-desc{margin-top:8px;font-size:13px;line-height:1.62;color:var(--text2)}
+.suite-meta{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.tag{display:inline-flex;align-items:center;gap:6px;padding:4px 8px;border:1px solid var(--border2);border-radius:999px;font-family:var(--mono);font-size:10px;color:var(--text2);letter-spacing:.03em}
+.tag.live{color:var(--green)}
+.tag.warn{color:var(--yellow)}
+.tag.blue{color:var(--cyan)}
+.suite-steps{margin-top:12px;display:flex;flex-direction:column;gap:8px}
+.suite-step{display:grid;grid-template-columns:22px 1fr;gap:8px;align-items:flex-start}
+.suite-step-num{width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:rgba(0,207,255,.08);border:1px solid rgba(0,207,255,.18);font-family:var(--mono);font-size:10px;color:var(--cyan)}
+.suite-step-text{font-size:12px;line-height:1.55;color:var(--text2)}
+.suite-step-text strong{display:block;color:var(--text);font-weight:600}
+.suite-actions{display:flex;gap:10px;margin-top:14px}
+
+.summary-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+.summary-card{padding:14px;border:1px solid var(--border2);border-radius:8px;background:rgba(0,207,255,.03)}
+.summary-label{font-family:var(--head);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--text3);margin-bottom:6px}
+.summary-value{font-family:var(--head);font-size:18px;color:var(--text);letter-spacing:-.02em}
+.summary-note{font-size:12px;color:var(--text2);line-height:1.55;margin-top:5px}
+
+.section{border:1px solid var(--border2);border-radius:8px;background:rgba(0,207,255,.025);overflow:hidden}
+.section + .section{margin-top:16px}
+.section-head{padding:12px 14px;border-bottom:1px solid var(--border2);display:flex;align-items:center;justify-content:space-between;gap:10px}
+.section-title{font-family:var(--head);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--cyan)}
+.section-sub{font-family:var(--mono);font-size:10px;color:var(--text3)}
+.section-body{padding:14px}
+
+.feed{display:flex;flex-direction:column;gap:12px;max-height:420px;overflow-y:auto}
+.event{border-left:3px solid var(--border);padding:10px 12px;background:rgba(3,13,28,.45)}
+.event.ok{border-left-color:var(--green)}
+.event.fail{border-left-color:var(--red)}
+.event.run{border-left-color:var(--cyan)}
+.event.warn{border-left-color:var(--yellow)}
+.event-meta{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:6px}
+.event-title{font-size:13px;font-weight:600;color:var(--text)}
+.event-status{font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--text3)}
+.event-summary{font-size:13px;line-height:1.65;color:var(--text2)}
+.event-command{margin-top:7px;font-family:var(--mono);font-size:11px;line-height:1.55;color:var(--cyan);word-break:break-all}
+.event-output{margin-top:8px;padding:10px 12px;border-radius:6px;background:rgba(13,32,64,.52);font-family:var(--mono);font-size:11px;line-height:1.6;color:var(--text2);white-space:pre-wrap;word-break:break-word}
+
+.history-list{display:flex;flex-direction:column;gap:10px}
+.history-item{padding:12px 14px;border:1px solid var(--border2);border-radius:8px;background:rgba(0,207,255,.03)}
+.history-top{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.history-title{font-size:13px;font-weight:600;color:var(--text)}
+.history-result{font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase}
+.history-result.pass{color:var(--green)}
+.history-result.fail{color:var(--red)}
+.history-text{margin-top:6px;font-size:12px;line-height:1.6;color:var(--text2)}
+
+.muted{color:var(--text3)}
+.empty{padding:16px;border:1px dashed var(--border2);border-radius:8px;color:var(--text3);font-size:13px;line-height:1.6}
+
+@media (max-width:1120px){
+  .hero{grid-template-columns:1fr}
+  .grid{grid-template-columns:1fr}
+  .summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media (max-width:760px){
+  nav{height:auto;flex-wrap:wrap}
+  .nav-logo{width:100%;border-right:none;border-bottom:1px solid var(--border2);height:52px}
+  .nav-links{order:3;width:100%;overflow-x:auto}
+  .nav-meta{width:100%;justify-content:flex-start;padding:10px 16px}
+  main{padding:132px 14px 24px}
+  .hero-side{grid-template-columns:1fr}
+  .summary-grid{grid-template-columns:1fr}
+  .suite-actions,.hero-actions{flex-direction:column}
+  .btn{width:100%}
+}
+</style>
+</head>
+<body>
+<nav>
+  <div class="nav-logo">
+    <img src="assets/FELogo_nav.png" alt="LSF"/>
+    <span>LSF Operator Console</span>
+  </div>
+  <div class="nav-links">
+    <a href="index.html">Docs</a>
+    <a href="simulator.html">Simulation</a>
+    <a href="tests.html" class="active">Tests</a>
+  </div>
+  <div class="nav-meta">
+    <div class="nav-chip" id="ws-chip">WS offline</div>
+    <div class="nav-chip" id="runner-chip">Runner idle</div>
+  </div>
+</nav>
+
+<main>
+  <div class="shell">
+    <section class="hero">
+      <div class="hero-card hero-main">
+        <div class="eyebrow">Operator Validation</div>
+        <h1 class="hero-title">Curated runtime tests, without shell micromanagement.</h1>
+        <p class="hero-desc">
+          This page exposes the repo's useful smoke and validation suites through the live WebSocket runtime.
+          Raw scripts remain in <code>scripts/</code>, but the operator sees only grouped checks with readable outcomes,
+          step timing, and the exact failing command when something breaks.
+        </p>
+        <div class="hero-note">
+          The live backend is required for suites marked <strong>LIVE BACKEND</strong>. The operator console does not invent results:
+          it renders the same structured events persisted by the runtime and the same curated validation commands the repo already uses.
+        </div>
+        <div class="hero-actions">
+          <button class="btn btn-primary" id="quick-runtime">Run Runtime Smoke</button>
+          <button class="btn" id="quick-phase9">Run Phase 9 Core</button>
+          <button class="btn" id="refresh-btn">Refresh Catalog</button>
+        </div>
+      </div>
+      <div class="hero-card hero-side">
+        <div class="hero-stat">
+          <div class="hero-stat-label">Backend</div>
+          <div class="hero-stat-value" id="hero-backend">Offline</div>
+          <div class="hero-stat-sub" id="hero-backend-sub">No runtime connection yet.</div>
+        </div>
+        <div class="hero-stat">
+          <div class="hero-stat-label">Provider</div>
+          <div class="hero-stat-value" id="hero-provider">-</div>
+          <div class="hero-stat-sub" id="hero-provider-sub">Waiting for init/tick payload.</div>
+        </div>
+        <div class="hero-stat">
+          <div class="hero-stat-label">Runner</div>
+          <div class="hero-stat-value" id="hero-runner">Idle</div>
+          <div class="hero-stat-sub" id="hero-runner-sub">No suite running.</div>
+        </div>
+        <div class="hero-stat">
+          <div class="hero-stat-label">Last Result</div>
+          <div class="hero-stat-value" id="hero-last">No runs</div>
+          <div class="hero-stat-sub" id="hero-last-sub">Run a suite to populate this panel.</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="grid">
+      <div class="panel">
+        <div class="panel-header">
+          <div>
+            <div class="panel-title">Curated Suites</div>
+            <div class="panel-sub">Repo scripts grouped into human-usable validations</div>
+          </div>
+          <div class="panel-sub" id="suite-count">0 suites</div>
+        </div>
+        <div class="panel-body">
+          <div class="stack" id="suite-list">
+            <div class="empty">Connecting to the runtime to load the available validation suites.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header">
+          <div>
+            <div class="panel-title">Execution Overview</div>
+            <div class="panel-sub">Live status, readable results, and recent validation history</div>
+          </div>
+          <div class="panel-sub" id="ws-endpoint-label">ws://127.0.0.1:8765</div>
+        </div>
+        <div class="panel-body">
+          <div class="summary-grid">
+            <div class="summary-card">
+              <div class="summary-label">Connection</div>
+              <div class="summary-value" id="summary-connection">Offline</div>
+              <div class="summary-note" id="summary-connection-note">Backend WebSocket not connected.</div>
+            </div>
+            <div class="summary-card">
+              <div class="summary-label">Active Suite</div>
+              <div class="summary-value" id="summary-suite">None</div>
+              <div class="summary-note" id="summary-suite-note">No validation is running.</div>
+            </div>
+            <div class="summary-card">
+              <div class="summary-label">Step Progress</div>
+              <div class="summary-value" id="summary-progress">0 / 0</div>
+              <div class="summary-note" id="summary-progress-note">No steps completed yet.</div>
+            </div>
+            <div class="summary-card">
+              <div class="summary-label">Last Summary</div>
+              <div class="summary-value" id="summary-last">Idle</div>
+              <div class="summary-note" id="summary-last-note">No suite has reported a result yet.</div>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section-head">
+              <div class="section-title">Live Results</div>
+              <div class="section-sub" id="result-stream-label">Awaiting execution events</div>
+            </div>
+            <div class="section-body">
+              <div class="feed" id="result-feed">
+                <div class="empty">When a suite runs, each step result will appear here with pass/fail state, human summary, duration, and command preview.</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section-head">
+              <div class="section-title">Recent History</div>
+              <div class="section-sub">Persisted by the backend runner status</div>
+            </div>
+            <div class="section-body">
+              <div class="history-list" id="history-list">
+                <div class="empty">No suite history is available yet.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+</main>
+
+<script>
+const query = new URLSearchParams(window.location.search);
+const wsPort = Number(query.get('ws_port') || '8765');
+const wsHost = query.get('ws_host') || window.location.hostname || '127.0.0.1';
+const wsScheme = window.location.protocol === 'https:' ? 'wss' : 'ws';
+const wsEndpoint = `${wsScheme}://${wsHost}:${wsPort}`;
+
+let ws = null;
+let reconnectTimer = null;
+let wsConnected = false;
+let suites = [];
+let runner = null;
+let runtime = null;
+let liveResults = [];
+let lastCompletedRun = null;
+
+document.getElementById('ws-endpoint-label').textContent = wsEndpoint;
+document.getElementById('quick-runtime').addEventListener('click', () => triggerSuite('runtime_smoke'));
+document.getElementById('quick-phase9').addEventListener('click', () => triggerSuite('phase9_core'));
+document.getElementById('refresh-btn').addEventListener('click', requestCatalog);
+
+function escapeHtml(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function fmtTime(ts) {
+  if (!ts) return '—';
+  return new Date(ts * 1000).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+}
+
+function fmtDuration(ms) {
+  if (!ms && ms !== 0) return '—';
+  if (ms < 1000) return `${ms.toFixed(0)} ms`;
+  return `${(ms / 1000).toFixed(2)} s`;
+}
+
+function runnerBusy() {
+  return !!(runner && runner.busy);
+}
+
+function updateChips() {
+  const wsChip = document.getElementById('ws-chip');
+  wsChip.className = 'nav-chip ' + (wsConnected ? 'live' : 'fail');
+  wsChip.textContent = wsConnected ? `WS live on :${wsPort}` : 'WS offline';
+
+  const runnerChip = document.getElementById('runner-chip');
+  const lastStatus = String((runner && runner.last_status) || 'idle');
+  let chipClass = '';
+  let text = 'Runner idle';
+  if (runnerBusy()) {
+    chipClass = 'busy';
+    text = `Running ${runner.active_suite_label || runner.active_suite_id || 'suite'}`;
+  } else if (lastStatus === 'passed') {
+    chipClass = 'live';
+    text = `Last pass: ${runner.last_suite_label || runner.last_suite_id || 'suite'}`;
+  } else if (lastStatus === 'failed') {
+    chipClass = 'fail';
+    text = `Last fail: ${runner.last_suite_label || runner.last_suite_id || 'suite'}`;
+  }
+  runnerChip.className = `nav-chip ${chipClass}`.trim();
+  runnerChip.textContent = text;
+}
+
+function updateHero() {
+  const provider = runtime && runtime.provider ? runtime.provider : {};
+  const llm = runtime && runtime.llm ? runtime.llm : {};
+  const runnerState = runner || {};
+  const lastHistory = Array.isArray(runnerState.history) && runnerState.history.length
+    ? runnerState.history[runnerState.history.length - 1]
+    : null;
+
+  document.getElementById('hero-backend').textContent = wsConnected ? 'Connected' : 'Offline';
+  document.getElementById('hero-backend-sub').textContent = wsConnected
+    ? `WebSocket runtime reachable at ${wsEndpoint}.`
+    : 'Start the runtime and reload or wait for auto-reconnect.';
+
+  document.getElementById('hero-provider').textContent = provider.name ? String(provider.name).toUpperCase() : '-';
+  document.getElementById('hero-provider-sub').textContent = provider.name
+    ? `real=${provider.is_real ? 'yes' : 'no'} | llm=${llm.mode || 'unknown'}`
+    : 'Waiting for provider and LLM state.';
+
+  const lastStatus = String(runnerState.last_status || 'idle');
+  document.getElementById('hero-runner').textContent = runnerBusy()
+    ? 'Running'
+    : lastStatus === 'passed' ? 'Passed'
+    : lastStatus === 'failed' ? 'Failed'
+    : 'Idle';
+  document.getElementById('hero-runner-sub').textContent = runnerBusy()
+    ? `${runnerState.active_suite_label || runnerState.active_suite_id || 'suite'} is executing ${runnerState.active_step_title || runnerState.active_step_id || 'a step'}.`
+    : runnerState.last_summary || 'No suite running.';
+
+  document.getElementById('hero-last').textContent = lastHistory
+    ? (lastHistory.ok ? 'Pass' : 'Fail')
+    : 'No runs';
+  document.getElementById('hero-last-sub').textContent = lastHistory
+    ? `${lastHistory.suite_label} at ${fmtTime(lastHistory.completed_at)}`
+    : 'Run a suite to populate this panel.';
+}
+
+function updateSummary() {
+  const runnerState = runner || {};
+  const total = Number(runnerState.total_steps || 0);
+  const passed = Number(runnerState.passed_steps || 0);
+  const failed = Number(runnerState.failed_steps || 0);
+  const active = runnerState.active_suite_label || runnerState.last_suite_label || 'None';
+  const lastStatus = String(runnerState.last_status || 'idle');
+
+  document.getElementById('summary-connection').textContent = wsConnected ? 'Live' : 'Offline';
+  document.getElementById('summary-connection-note').textContent = wsConnected
+    ? `${(runtime && runtime.provider && runtime.provider.name) || 'runtime'} provider, ${(runtime && runtime.llm && runtime.llm.mode) || 'unknown'} llm mode.`
+    : 'The operator console cannot run suites until the runtime is reachable.';
+
+  document.getElementById('summary-suite').textContent = active;
+  document.getElementById('summary-suite-note').textContent = runnerBusy()
+    ? `Running step: ${runnerState.active_step_title || runnerState.active_step_id || 'unknown'}`
+    : runnerState.last_run_completed_at ? `Finished at ${fmtTime(runnerState.last_run_completed_at)}` : 'No validation is running.';
+
+  document.getElementById('summary-progress').textContent = `${passed + failed} / ${total}`;
+  document.getElementById('summary-progress-note').textContent = total
+    ? `${passed} passed, ${failed} failed.`
+    : 'No steps completed yet.';
+
+  document.getElementById('summary-last').textContent = lastStatus.toUpperCase();
+  document.getElementById('summary-last-note').textContent = runnerState.last_summary || 'No suite has reported a result yet.';
+}
+
+function renderSuites() {
+  const wrap = document.getElementById('suite-list');
+  document.getElementById('suite-count').textContent = `${suites.length} suite${suites.length === 1 ? '' : 's'}`;
+  if (!suites.length) {
+    wrap.innerHTML = '<div class="empty">No suite catalog received from the runtime yet.</div>';
+    return;
+  }
+  wrap.innerHTML = suites.map((suite) => {
+    const liveTag = suite.requires_live_backend
+      ? '<span class="tag live">LIVE BACKEND</span>'
+      : '<span class="tag blue">OFFLINE SAFE</span>';
+    const categoryTag = `<span class="tag">${escapeHtml(String(suite.category || 'general').toUpperCase())}</span>`;
+    const timeTag = `<span class="tag warn">${escapeHtml(String(suite.estimated_minutes || '?'))} min est.</span>`;
+    const disabled = runnerBusy() || (suite.requires_live_backend && !wsConnected);
+    const steps = (suite.steps || []).map((step, idx) => `
+      <div class="suite-step">
+        <div class="suite-step-num">${idx + 1}</div>
+        <div class="suite-step-text">
+          <strong>${escapeHtml(step.title || step.id || 'Step')}</strong>
+          ${escapeHtml(step.description || `timeout ${step.timeout_sec || '?'}s`)}
+        </div>
+      </div>
+    `).join('');
+    return `
+      <article class="suite-card">
+        <div class="suite-head">
+          <div>
+            <div class="suite-title">${escapeHtml(suite.label || suite.id || 'Suite')}</div>
+            <div class="suite-desc">${escapeHtml(suite.description || '')}</div>
+          </div>
+        </div>
+        <div class="suite-meta">${categoryTag}${timeTag}${liveTag}</div>
+        <div class="suite-steps">${steps}</div>
+        <div class="suite-actions">
+          <button class="btn btn-primary" ${disabled ? 'disabled' : ''} onclick="triggerSuite('${escapeHtml(suite.id)}')">Run Suite</button>
+        </div>
+      </article>
+    `;
+  }).join('');
+}
+
+function renderResults() {
+  const wrap = document.getElementById('result-feed');
+  const label = document.getElementById('result-stream-label');
+  label.textContent = runnerBusy()
+    ? `Executing ${runner.active_suite_label || runner.active_suite_id || 'suite'}`
+    : lastCompletedRun ? `Last completed: ${lastCompletedRun.suite_label || lastCompletedRun.suite_id || 'suite'}` : 'Awaiting execution events';
+
+  if (!liveResults.length) {
+    wrap.innerHTML = '<div class="empty">When a suite runs, each step result will appear here with pass/fail state, human summary, duration, and command preview.</div>';
+    return;
+  }
+  wrap.innerHTML = liveResults.map((item) => {
+    const klass = item.kind === 'step' ? (item.ok ? 'ok' : 'fail') : item.kind === 'warn' ? 'warn' : 'run';
+    const status = item.kind === 'step'
+      ? (item.ok ? 'passed' : 'failed')
+      : item.status || 'info';
+    const output = item.output ? `<div class="event-output">${escapeHtml(item.output)}</div>` : '';
+    const command = item.command ? `<div class="event-command">${escapeHtml(item.command)}</div>` : '';
+    return `
+      <div class="event ${klass}">
+        <div class="event-meta">
+          <div class="event-title">${escapeHtml(item.title || 'Event')}</div>
+          <div class="event-status">${escapeHtml(status)}${item.time ? ` · ${escapeHtml(item.time)}` : ''}</div>
+        </div>
+        <div class="event-summary">${escapeHtml(item.summary || '')}</div>
+        ${command}
+        ${output}
+      </div>
+    `;
+  }).join('');
+}
+
+function renderHistory() {
+  const wrap = document.getElementById('history-list');
+  const history = Array.isArray(runner && runner.history) ? runner.history.slice().reverse() : [];
+  if (!history.length) {
+    wrap.innerHTML = '<div class="empty">No suite history is available yet.</div>';
+    return;
+  }
+  wrap.innerHTML = history.map((item) => `
+    <div class="history-item">
+      <div class="history-top">
+        <div class="history-title">${escapeHtml(item.suite_label || item.suite_id || 'Suite')}</div>
+        <div class="history-result ${item.ok ? 'pass' : 'fail'}">${item.ok ? 'passed' : 'failed'}</div>
+      </div>
+      <div class="history-text">
+        ${escapeHtml(item.summary || '')}<br/>
+        <span class="muted">started ${escapeHtml(fmtTime(item.started_at))} · completed ${escapeHtml(fmtTime(item.completed_at))} · ${escapeHtml(String(item.passed_steps || 0))} passed / ${escapeHtml(String(item.failed_steps || 0))} failed</span>
+      </div>
+    </div>
+  `).join('');
+}
+
+function syncUi() {
+  updateChips();
+  updateHero();
+  updateSummary();
+  renderSuites();
+  renderResults();
+  renderHistory();
+}
+
+function appendEvent(event) {
+  liveResults.unshift(event);
+  liveResults = liveResults.slice(0, 24);
+  renderResults();
+}
+
+function requestCatalog() {
+  if (!wsConnected || !ws) return;
+  ws.send(JSON.stringify({type:'test_catalog'}));
+  ws.send(JSON.stringify({type:'test_run_status'}));
+}
+
+function triggerSuite(suiteId) {
+  if (!wsConnected || !ws || !suiteId) return;
+  ws.send(JSON.stringify({type:'test_run', suite_id:suiteId}));
+}
+
+function handleMessage(msg) {
+  if (msg.type === 'init' || msg.type === 'tick') {
+    runtime = msg;
+    if (msg.test_runner) runner = msg.test_runner;
+    syncUi();
+    return;
+  }
+  if (msg.type === 'test_catalog') {
+    suites = Array.isArray(msg.suites) ? msg.suites : [];
+    runner = msg.runner || runner;
+    syncUi();
+    return;
+  }
+  if (msg.type === 'test_run_status') {
+    runner = msg.runner || runner;
+    syncUi();
+    return;
+  }
+  if (msg.type === 'test_run_accepted') {
+    runner = msg.runner || runner;
+    liveResults = [];
+    appendEvent({
+      kind:'run',
+      title:`Suite accepted: ${msg.suite_id || 'unknown'}`,
+      status:'accepted',
+      time:new Date().toLocaleTimeString(),
+      summary:'The backend accepted the request and queued the curated validation suite.'
+    });
+    syncUi();
+    return;
+  }
+  if (msg.type === 'test_run_started') {
+    runner = msg.runner || runner;
+    liveResults = [];
+    appendEvent({
+      kind:'run',
+      title:`Running ${msg.suite && msg.suite.label ? msg.suite.label : 'suite'}`,
+      status:'running',
+      time:new Date().toLocaleTimeString(),
+      summary:msg.suite && msg.suite.description ? msg.suite.description : 'Validation suite started.'
+    });
+    syncUi();
+    return;
+  }
+  if (msg.type === 'test_step_started') {
+    runner = msg.runner || runner;
+    appendEvent({
+      kind:'run',
+      title:`Step ${msg.step_index || '?'} / ${msg.step_total || '?'}: ${(msg.step && msg.step.title) || (msg.step && msg.step.id) || 'step'}`,
+      status:'started',
+      time:new Date().toLocaleTimeString(),
+      summary:(msg.step && msg.step.description) || 'The backend started executing this validation step.'
+    });
+    syncUi();
+    return;
+  }
+  if (msg.type === 'test_step_result') {
+    runner = msg.runner || runner;
+    const step = msg.step || {};
+    const output = step.stderr_preview || step.stdout_preview || '';
+    appendEvent({
+      kind:'step',
+      ok:!!step.ok,
+      title:step.title || step.id || 'Step result',
+      status:step.ok ? 'passed' : 'failed',
+      time:new Date().toLocaleTimeString(),
+      summary:`${step.summary || (step.ok ? 'Step passed.' : 'Step failed.')} (${fmtDuration(Number(step.duration_ms || 0))})`,
+      command:step.command || '',
+      output:output
+    });
+    syncUi();
+    return;
+  }
+  if (msg.type === 'test_run_completed') {
+    runner = msg.runner || runner;
+    lastCompletedRun = msg;
+    appendEvent({
+      kind:msg.ok ? 'run' : 'warn',
+      title:`Suite ${msg.ok ? 'passed' : 'failed'}: ${msg.suite_label || msg.suite_id || 'suite'}`,
+      status:msg.ok ? 'passed' : 'failed',
+      time:new Date().toLocaleTimeString(),
+      summary:msg.summary || ''
+    });
+    syncUi();
+    return;
+  }
+  if (msg.type === 'test_run_rejected') {
+    runner = msg.runner || runner;
+    appendEvent({
+      kind:'warn',
+      title:'Suite request rejected',
+      status:'rejected',
+      time:new Date().toLocaleTimeString(),
+      summary:msg.reason ? `The runtime rejected the request: ${msg.reason}.` : 'The runtime rejected the request.'
+    });
+    syncUi();
+  }
+}
+
+function connectWS() {
+  try {
+    ws = new WebSocket(wsEndpoint);
+  } catch (err) {
+    wsConnected = false;
+    syncUi();
+    scheduleReconnect();
+    return;
+  }
+  ws.onopen = () => {
+    wsConnected = true;
+    requestCatalog();
+    syncUi();
+  };
+  ws.onmessage = (event) => {
+    try {
+      handleMessage(JSON.parse(event.data));
+    } catch (err) {
+      console.warn('Invalid WS payload', err);
+    }
+  };
+  ws.onerror = () => {};
+  ws.onclose = () => {
+    wsConnected = false;
+    syncUi();
+    scheduleReconnect();
+  };
+}
+
+function scheduleReconnect() {
+  if (reconnectTimer) return;
+  reconnectTimer = window.setTimeout(() => {
+    reconnectTimer = null;
+    connectWS();
+  }, 1500);
+}
+
+syncUi();
+connectWS();
+</script>
+</body>
+</html>
