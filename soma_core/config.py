@@ -118,6 +118,48 @@ class SomaConfig:
     bios_write_memory: bool = field(default_factory=lambda: _bool("SOMA_BIOS_WRITE_MEMORY", True))
     bios_mutation_proposal_interval_sec: float = field(default_factory=lambda: _float("SOMA_BIOS_MUTATION_PROPOSAL_INTERVAL_SEC", 1800.0))
 
+    # ── Phase 9: metabolic growth ────────────────────────────────────────────
+    metabolic_engine: bool = field(default_factory=lambda: _bool("SOMA_METABOLIC_ENGINE", True))
+    metabolic_window_cycles: int = field(default_factory=lambda: int(_float("SOMA_METABOLIC_WINDOW_CYCLES", 100.0)))
+    metabolic_bios_window: int = field(default_factory=lambda: int(_float("SOMA_METABOLIC_BIOS_WINDOW", 10.0)))
+    growth_stability_threshold: float = field(default_factory=lambda: _float("SOMA_GROWTH_STABILITY_THRESHOLD", 0.65))
+    growth_max_stress: float = field(default_factory=lambda: _float("SOMA_GROWTH_MAX_STRESS", 0.35))
+    min_self_integrity: float = field(default_factory=lambda: _float("SOMA_MIN_SELF_INTEGRITY", 0.75))
+    metabolic_vector_history_max: int = field(default_factory=lambda: int(_float("SOMA_METABOLIC_VECTOR_HISTORY_MAX", 5000.0)))
+    metabolic_history_interval_sec: float = field(default_factory=lambda: _float("SOMA_METABOLIC_HISTORY_INTERVAL_SEC", 60.0))
+
+    # ── Phase 9: growth / recovery loop ──────────────────────────────────────
+    growth_loop: bool = field(default_factory=lambda: _bool("SOMA_GROWTH_LOOP", True))
+    growth_llm_interval_sec: float = field(default_factory=lambda: _float("SOMA_GROWTH_LLM_INTERVAL_SEC", 300.0))
+    growth_min_stable_bios_cycles: int = field(default_factory=lambda: int(_float("SOMA_GROWTH_MIN_STABLE_BIOS_CYCLES", 3.0)))
+    growth_max_tasks_per_day: int = field(default_factory=lambda: int(_float("SOMA_GROWTH_MAX_TASKS_PER_DAY", 24.0)))
+    growth_require_tests: bool = field(default_factory=lambda: _bool("SOMA_GROWTH_REQUIRE_TESTS", True))
+    growth_allow_package_user_install: bool = field(default_factory=lambda: _bool("SOMA_GROWTH_ALLOW_PACKAGE_USER_INSTALL", True))
+    growth_allow_system_package_install: bool = field(default_factory=lambda: _bool("SOMA_GROWTH_ALLOW_SYSTEM_PACKAGE_INSTALL", False))
+    recovery_loop: bool = field(default_factory=lambda: _bool("SOMA_RECOVERY_LOOP", True))
+    recovery_check_interval_sec: float = field(default_factory=lambda: _float("SOMA_RECOVERY_CHECK_INTERVAL_SEC", 60.0))
+    recovery_rollback_on_mutation_stress: bool = field(default_factory=lambda: _bool("SOMA_RECOVERY_ROLLBACK_ON_MUTATION_STRESS", True))
+    recovery_require_stable_cycles: int = field(default_factory=lambda: int(_float("SOMA_RECOVERY_REQUIRE_STABLE_CYCLES", 5.0)))
+
+    # ── Phase 9: reward / internal loop / vector interpreter ─────────────────
+    reward_model: bool = field(default_factory=lambda: _bool("SOMA_REWARD_MODEL", True))
+    reward_history_max: int = field(default_factory=lambda: int(_float("SOMA_REWARD_HISTORY_MAX", 1000.0)))
+    reward_min_for_mutation_keep: float = field(default_factory=lambda: _float("SOMA_REWARD_MIN_FOR_MUTATION_KEEP", 0.15))
+    reproduction_local_only: bool = field(default_factory=lambda: _bool("SOMA_REPRODUCTION_LOCAL_ONLY", True))
+    reproduction_root: str = field(default_factory=lambda: _str("SOMA_REPRODUCTION_ROOT", "/home/funboy/latent-somatic-mutants"))
+    reproduction_max_children: int = field(default_factory=lambda: int(_float("SOMA_REPRODUCTION_MAX_CHILDREN", 10.0)))
+    reproduction_no_network_spread: bool = field(default_factory=lambda: _bool("SOMA_REPRODUCTION_NO_NETWORK_SPREAD", True))
+    reproduction_no_secret_copy: bool = field(default_factory=lambda: _bool("SOMA_REPRODUCTION_NO_SECRET_COPY", True))
+    reproduction_require_operator_for_migration: bool = field(default_factory=lambda: _bool("SOMA_REPRODUCTION_REQUIRE_OPERATOR_FOR_MIGRATION", True))
+    internal_loop: bool = field(default_factory=lambda: _bool("SOMA_INTERNAL_LOOP", True))
+    internal_decision_history_max: int = field(default_factory=lambda: int(_float("SOMA_INTERNAL_DECISION_HISTORY_MAX", 1000.0)))
+    internal_llm_json_required: bool = field(default_factory=lambda: _bool("SOMA_INTERNAL_LLM_JSON_REQUIRED", True))
+    internal_invalid_json_penalty: float = field(default_factory=lambda: _float("SOMA_INTERNAL_INVALID_JSON_PENALTY", -0.05))
+    vector_interpreter: bool = field(default_factory=lambda: _bool("SOMA_VECTOR_INTERPRETER", True))
+    vector_baseline_min_samples: int = field(default_factory=lambda: int(_float("SOMA_VECTOR_BASELINE_MIN_SAMPLES", 100.0)))
+    vector_drift_threshold: float = field(default_factory=lambda: _float("SOMA_VECTOR_DRIFT_THRESHOLD", 0.35))
+    vector_cpp_mismatch_threshold: float = field(default_factory=lambda: _float("SOMA_VECTOR_CPP_MISMATCH_THRESHOLD", 0.20))
+
     # ── mutation sandbox ──────────────────────────────────────────────────────
     mutation_sandbox: bool = field(default_factory=lambda: _bool("SOMA_MUTATION_SANDBOX", True))
     mutation_root: str = field(default_factory=lambda: _str("SOMA_MUTATION_ROOT", "/home/funboy/latent-somatic-mutants"))

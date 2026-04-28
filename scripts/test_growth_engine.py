@@ -30,6 +30,10 @@ def main() -> int:
         "bios": {"run_count": 0, "useful_cycles": 0},
         "mutation": {"sandbox_root_exists": False, "sandbox_count": 0, "last_noop_ok": False, "rollback_ok": False},
         "cpp_bridge": {"status": "missing", "binary_exists": False, "smoke_ok": False, "last_error": "binary_missing"},
+        "metabolic": {"mode": "observe", "growth_allowed": False, "recovery_required": False, "stable_cycles": 0, "reasons": ["insufficient_stable_cycles"]},
+        "reward": {"rolling_score": 0.0, "trend": 0.0},
+        "vector_state": {"vector_stability": 0.9, "vector_drift": 0.05, "vector_anomaly": 0.02},
+        "internal_loop": {},
     }
     result = ge.evaluate(make_snapshot(True), {**base_ctx, "autobiography": {**base_ctx["autobiography"], "lessons_count": 0}})
     failures += check("raw reflection count alone does not advance", result["stage"] in {"verified_command_agency", "autobiographical_continuity"}, str(result))
@@ -51,6 +55,15 @@ def main() -> int:
     ctx4["bios"] = {"run_count": 2, "useful_cycles": 0}
     result4 = ge.evaluate(make_snapshot(True), ctx4)
     failures += check("BIOS stage requires BIOS history evidence", result4["stage"] == "autonomous_bios_loop", str(result4))
+
+    ctx5 = dict(base_ctx)
+    ctx5["command_agency"] = {"successful": 5, "categories": ["system", "network", "repo"], "regression_ok": True}
+    ctx5["autobiography"] = {"lessons_count": 5, "operator_lessons_count": 2, "limitation_lessons_count": 1, "last_nightly_reflection": "done", "empty_reflections": 1, "total_reflections": 10}
+    ctx5["bios"] = {"run_count": 7, "useful_cycles": 4}
+    ctx5["metabolic"] = {"mode": "recover", "growth_allowed": False, "recovery_required": True, "stable_cycles": 0, "reasons": ["stress_above_max"]}
+    result5 = ge.evaluate(make_snapshot(True), ctx5)
+    failures += check("recovery blocks growth", result5["recovery_required"] is True and result5["growth_allowed"] is False, str(result5))
+    failures += check("recovery blockers are exposed", "stress_above_max" in result5["blocked_by"], str(result5["blocked_by"]))
     return failures
 
 

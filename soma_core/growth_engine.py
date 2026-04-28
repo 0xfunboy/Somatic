@@ -3,6 +3,8 @@ from __future__ import annotations
 import time
 from typing import Any
 
+from soma_core.config import CFG
+
 
 _STAGES = [
     "reflex_shell",
@@ -11,6 +13,7 @@ _STAGES = [
     "verified_command_agency",
     "autobiographical_continuity",
     "autonomous_bios_loop",
+    "metabolic_growth_ready",
     "mutation_sandbox_ready",
     "self_improving_candidate",
     "cpp_embodied_runtime_ready",
@@ -32,6 +35,10 @@ class GrowthEngine:
             "bios": context.get("bios", {}),
             "mutation": context.get("mutation", {}),
             "cpp_bridge": context.get("cpp_bridge", {}),
+            "metabolic": context.get("metabolic", {}),
+            "reward": context.get("reward", {}),
+            "vector_state": context.get("vector_state", {}),
+            "internal_loop": context.get("internal_loop", {}),
         }
         stage_details = [
             self._reflex_shell(evidence),
@@ -40,6 +47,7 @@ class GrowthEngine:
             self._verified_command_agency(evidence),
             self._autobiographical_continuity(evidence),
             self._autonomous_bios_loop(evidence),
+            self._metabolic_growth_ready(evidence),
             self._mutation_sandbox_ready(evidence),
             self._self_improving_candidate(evidence),
             self._cpp_embodied_runtime_ready(evidence),
@@ -52,15 +60,36 @@ class GrowthEngine:
                 break
         completed = sum(1 for detail in stage_details if detail["done"])
         score = round(completed / max(1, len(stage_details)), 4)
+        metabolic = evidence.get("metabolic", {})
+        metabolic_mode = str(metabolic.get("mode") or "observe")
+        growth_allowed = bool(metabolic.get("growth_allowed", False))
+        recovery_required = bool(metabolic.get("recovery_required", False))
+        blocked_by = list(current["blocked_by"])
+        if recovery_required:
+            for reason in metabolic.get("reasons", []) or ["recovery_required"]:
+                if reason not in blocked_by:
+                    blocked_by.append(reason)
+        next_step = current["next_step"]
+        internal_loop = evidence.get("internal_loop", {})
+        if recovery_required:
+            next_step = "Growth paused. Stay in recovery mode until stress and vector anomaly subside."
+        elif growth_allowed and metabolic_mode in {"grow", "mutate", "evaluate", "reproduce"} and not internal_loop.get("last_run_at"):
+            next_step = "Metabolism is stable. Run the internal growth planner to produce evidence."
+        elif growth_allowed and metabolic_mode == "observe":
+            next_step = "Metabolism is stable but no growth action happened recently. Trigger an internal growth cycle."
         return {
             "stage": current["stage"],
             "score": score,
             "growth_score": score,
+            "metabolic_mode": metabolic_mode,
+            "growth_allowed": growth_allowed,
+            "recovery_required": recovery_required,
             "completed_requirements": current["completed"],
             "missing_requirements": current["missing"],
-            "blocked_by": current["blocked_by"],
+            "blocked_by": blocked_by,
             "evidence": evidence,
-            "next_step": current["next_step"],
+            "next_step": next_step,
+            "last_internal_decision": str(internal_loop.get("last_prompt_type") or internal_loop.get("last_decision_id") or ""),
             "last_evaluated_at": time.time(),
         }
 
@@ -146,6 +175,23 @@ class GrowthEngine:
         }
         return self._pack("autonomous_bios_loop", reqs, next_step="Let BIOS complete more useful cycles.")
 
+    def _metabolic_growth_ready(self, evidence: dict[str, Any]) -> dict[str, Any]:
+        metabolic = evidence.get("metabolic", {})
+        reward = evidence.get("reward", {})
+        reqs = {
+            "metabolic_mode_known": bool(metabolic.get("mode")),
+            "growth_allowed": bool(metabolic.get("growth_allowed", False)),
+            "stable_cycles_ready": int(metabolic.get("stable_cycles", 0)) >= CFG.growth_min_stable_bios_cycles,
+            "reward_not_strongly_negative": float(reward.get("rolling_score", 0.0)) >= -0.25,
+        }
+        blocked = list(metabolic.get("reasons", [])) if metabolic.get("recovery_required") else []
+        return self._pack(
+            "metabolic_growth_ready",
+            reqs,
+            blocked_by=blocked,
+            next_step="Hold stability and let the internal growth planner choose an evidence-producing action.",
+        )
+
     def _mutation_sandbox_ready(self, evidence: dict[str, Any]) -> dict[str, Any]:
         mutation = evidence.get("mutation", {})
         reqs = {
@@ -154,16 +200,19 @@ class GrowthEngine:
             "noop_test_passes": bool(mutation.get("last_noop_ok", False)),
             "rollback_test_passes": bool(mutation.get("rollback_ok", False)),
         }
-        return self._pack("mutation_sandbox_ready", reqs, next_step="Create a sandbox and validate no-op mutation flow.")
+        blocked = list(mutation.get("last_blockers", []))
+        return self._pack("mutation_sandbox_ready", reqs, blocked_by=blocked, next_step="Create a sandbox and validate no-op mutation flow.")
 
     def _self_improving_candidate(self, evidence: dict[str, Any]) -> dict[str, Any]:
         mutation = evidence.get("mutation", {})
+        reward = evidence.get("reward", {})
         reqs = {
             "real_mutation_proposal": bool(mutation.get("proposal_generated", False)),
             "applied_in_sandbox_only": bool(mutation.get("sandbox_only", False)),
             "tests_pass": bool(mutation.get("last_tests_ok", False)),
             "diff_summary_created": bool(mutation.get("last_diff_summary")),
             "operator_review_report": bool(mutation.get("last_report")),
+            "reward_supportive": float(reward.get("rolling_score", 0.0)) >= 0.0,
         }
         return self._pack("self_improving_candidate", reqs, next_step="Generate and evaluate a real sandbox-only mutation proposal.")
 

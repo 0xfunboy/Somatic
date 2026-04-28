@@ -8,10 +8,25 @@ from soma_core.skills.base import SkillResult
 
 
 class SkillRouter:
-    def __init__(self, autobiography: Autobiography | None = None) -> None:
+    def __init__(self, autobiography: Autobiography | None = None, introspector: Any | None = None) -> None:
         self._autobiography = autobiography
+        self._introspector = introspector
+
+    def attach_introspector(self, introspector: Any) -> None:
+        self._introspector = introspector
 
     def execute(self, user_text: str, context: dict[str, Any] | None = None) -> dict[str, Any] | None:
+        if self._introspector is not None:
+            try:
+                result = self._introspector.execute(
+                    user_text,
+                    (context or {}).get("snapshot"),
+                    (context or {}).get("growth"),
+                )
+            except Exception:
+                result = None
+            if result is not None:
+                return result
         low = (user_text or "").lower()
         if any(mark in low for mark in ("lezioni", "lesson", "lessons", "hai imparato", "learned")):
             return self._lessons_skill()

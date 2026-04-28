@@ -93,3 +93,88 @@ def failure_analysis_prompt(context: dict) -> str:
         {"root_causes": [], "next_checks": [], "operator_visible": False},
         ["Evidence only.", "No body telemetry unless it caused the failure."],
     )
+
+
+def metabolic_growth_planner_prompt(
+    identity: dict[str, Any],
+    metabolic_state: dict[str, Any],
+    growth_state: dict[str, Any],
+    lessons: list[dict[str, Any]],
+    capabilities: dict[str, Any],
+    blockers: list[str],
+    reward: dict[str, Any],
+    vector_state: dict[str, Any],
+) -> str:
+    return _json_prompt(
+        "You are Soma's internal growth planner.",
+        {
+            "identity": identity,
+            "metabolic_state": metabolic_state,
+            "growth_state": growth_state,
+            "known_lessons": lessons,
+            "capabilities": capabilities,
+            "blockers": blockers,
+            "reward": reward,
+            "vector_state": vector_state,
+        },
+        {
+            "goal": "",
+            "mode": "grow",
+            "action_type": "observe",
+            "command": "",
+            "target_file": "",
+            "mutation_summary": "",
+            "expected_power_gain": "",
+            "risk": "low",
+            "success_criteria": "",
+            "rollback_plan": "",
+            "reason": "",
+        },
+        [
+            "You are not chatting with the operator.",
+            "If metabolic state is unstable, choose recover or observe only.",
+            "If stable, choose one concrete safe action that increases power, competence, continuity, or self-improvement capacity.",
+            "Prefer tests, measurements, and mutation proposals that stay inside the sandbox.",
+            "Shell commands must be safe and non-destructive.",
+            "Repo modifications must go through the mutation sandbox.",
+            "Do not touch .env or secrets.",
+            "No network spreading, persistence outside the repo, or privilege escalation.",
+        ],
+    )
+
+
+def metabolic_recovery_planner_prompt(
+    metabolic_state: dict[str, Any],
+    recent_events: list[dict[str, Any]],
+    last_mutation: dict[str, Any],
+    baselines: dict[str, Any],
+    vector_state: dict[str, Any],
+) -> str:
+    return _json_prompt(
+        "Soma is in recovery mode. Find the most likely cause of instability and choose one safe recovery action.",
+        {
+            "metabolic_state": metabolic_state,
+            "recent_events": recent_events,
+            "last_mutation": last_mutation,
+            "baselines": baselines,
+            "vector_state": vector_state,
+        },
+        {
+            "suspected_cause": "",
+            "evidence": [],
+            "action_type": "observe",
+            "command": "",
+            "should_pause_growth": True,
+            "should_rollback_last_mutation": False,
+            "success_criteria": "",
+            "reason": "",
+        },
+        [
+            "Preserve the host.",
+            "Do not start new growth while unstable.",
+            "Diagnose first and choose one safe action only.",
+            "Rollback only if instability started after mutation.",
+            "Never hide failure.",
+            "Write lessons when mutation caused instability.",
+        ],
+    )

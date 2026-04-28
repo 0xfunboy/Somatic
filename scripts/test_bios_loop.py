@@ -33,6 +33,53 @@ class DummyExperience:
         return [{"id": "x", "behavioral_update": "keep technical answers direct"}][:limit]
 
 
+class DummyMetabolic:
+    def __init__(self, mode: str) -> None:
+        self._mode = mode
+
+    def current(self):
+        return {
+            "mode": self._mode,
+            "growth_allowed": self._mode in {"grow", "mutate"},
+            "recovery_required": self._mode == "recover",
+            "stable_cycles": 5,
+            "reasons": [] if self._mode in {"grow", "observe"} else ["stress_above_max"],
+        }
+
+    def update(self, _snapshot, _context):
+        return self.current()
+
+
+class DummyInternalLoop:
+    def __init__(self) -> None:
+        self.called: list[str] = []
+
+    def run_growth_cycle(self, _context):
+        self.called.append("grow")
+        return {
+            "prompt": "growth prompt",
+            "parsed": {"action_type": "repo_test"},
+            "action_taken": {"action_type": "repo_test", "command": "python3 scripts/test_answer_finalizer.py", "goal": "verify"},
+            "evidence": {"ok": True, "command": "python3 scripts/test_answer_finalizer.py"},
+            "reward": {"kind": "test_pass", "value": 0.15},
+            "next_task": "evaluate_reward",
+        }
+
+    def run_recovery_cycle(self, _context):
+        self.called.append("recover")
+        return {
+            "prompt": "recovery prompt",
+            "parsed": {"action_type": "pause_growth"},
+            "action_taken": {"action_type": "pause_growth", "command": "", "goal": "recover"},
+            "evidence": {"ok": True, "reason": "pause growth"},
+            "reward": {"kind": "neutral", "value": 0.0},
+            "next_task": "recover",
+        }
+
+    def status(self):
+        return {"last_prompt_type": "growth_planner", "last_run_at": 1.0}
+
+
 def check(name: str, condition: bool, detail: str = "") -> int:
     print(f"{'PASS' if condition else 'FAIL'} {name}" + (f" — {detail}" if detail else ""))
     return 0 if condition else 1
@@ -49,10 +96,11 @@ def main() -> int:
             executor=exe,
             baseline_store=DummyBaselines(),
             experience=DummyExperience(),
+            metabolic_engine=DummyMetabolic("observe"),
             data_root=Path(td),
         )
         result = bios.run_once(snapshot)
-        failures += check("selects baseline task", result["task"]["task"] == "update_body_baseline", str(result))
+        failures += check("observe mode prefers cheap evidence", result["task"]["task"] == "check_runtime_storage", str(result))
         failures += check("writes bios history", (Path(td) / "bios_history.jsonl").exists())
         second = bios.maybe_run(snapshot, last_user_interaction_at=0.0)
         failures += check("respects max tasks per hour", second is None, str(second))
@@ -60,18 +108,21 @@ def main() -> int:
 
     with tempfile.TemporaryDirectory() as td:
         exe = DummyExecutor()
+        internal = DummyInternalLoop()
         bios = BiosLoop(
             interval_sec=0.0,
             max_tasks_per_hour=5,
             executor=exe,
             baseline_store=DummyBaselines(),
             experience=DummyExperience(),
-            call_llm_raw=lambda *_args, **_kwargs: json.dumps({"task": "verify_environment_fact", "reason": "check command agency", "requires_shell": True, "command": "uname -r"}),
+            metabolic_engine=DummyMetabolic("grow"),
+            internal_loop=internal,
             data_root=Path(td),
         )
         result = bios.run_once({"_growth": {"missing_requirements": ["three_categories"], "stage": "verified_command_agency"}, "derived": {}, "system": {}, "provider": {}})
-        failures += check("handles mocked llm json", result["task"]["task"] == "verify_environment_fact", str(result))
-        failures += check("shell task uses executor", exe.commands == ["uname -r"], str(exe.commands))
+        failures += check("grow mode uses internal loop", internal.called == ["grow"], str(internal.called))
+        failures += check("internal evidence captured", result["result"]["evidence"]["ok"] is True, str(result))
+        failures += check("bios state stores internal prompt", json.loads((Path(td) / "bios_state.json").read_text(encoding="utf-8")).get("last_internal_prompt") == "growth prompt")
     return failures
 
 

@@ -34,13 +34,27 @@ def main() -> int:
         write(repo / "soma_core" / "core.py", "x = 1\n")
         write(repo / "sensor_providers" / "base.py", "x = 1\n")
         for name in (
+            "test_metabolism.py",
+            "test_internal_loop.py",
+            "test_reward_engine.py",
+            "test_power_policy.py",
+            "test_vector_interpreter.py",
+            "test_growth_recovery_switch.py",
+            "test_mutation_reward.py",
+            "test_phase9_introspection.py",
+            "test_answer_finalizer.py",
+            "test_output_filter.py",
+            "test_relevance_filter.py",
+            "test_growth_engine.py",
+            "test_baselines.py",
+            "test_bios_loop.py",
+            "test_mutation_sandbox.py",
+            "test_cpp_bridge.py",
+            "test_life_drive.py",
+            "test_experience_distiller.py",
             "test_command_planner.py",
             "test_telemetry_relevance.py",
-            "test_journal_compaction.py",
-            "test_actuation_dedupe.py",
-            "test_autobiography.py",
-            "test_nightly_reflection.py",
-            "test_self_improvement_workflow.py",
+            "test_phase8_regressions.py",
         ):
             write(repo / "scripts" / name, "print('PASS')\n")
         sandbox = MutationSandbox(repo_root=repo, mutation_root=muts_td)
@@ -58,8 +72,11 @@ def main() -> int:
         report = sandbox.evaluate_mutation(sandbox_path, {"objective": "noop", "file_changes": {}}, tests)
         report_path = sandbox.write_report(report)
         failures += check("writes report", report_path.exists(), str(report_path))
+        allowed, blockers = sandbox.can_mutate({"growth_allowed": True, "recovery_required": False, "self_integrity": 0.9}, {}, {"rolling_score": 0.2})
+        failures += check("mutation can be allowed when stable", allowed is True and blockers == [], str(blockers))
         failures += check("live repo unchanged", (repo / "server.py").read_text(encoding="utf-8") == "print('ok')\n")
     return failures
+
 
 
 if __name__ == "__main__":

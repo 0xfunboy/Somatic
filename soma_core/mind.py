@@ -152,6 +152,10 @@ class SomaMind:
                 "bios": snapshot.get("bios_status", {}),
                 "mutation": snapshot.get("mutation_status", {}),
                 "cpp_bridge": snapshot.get("cpp_bridge_status", {}),
+                "metabolic": snapshot.get("metabolic", {}),
+                "reward": snapshot.get("reward", {}),
+                "vector_state": snapshot.get("vector_state", {}),
+                "internal_loop": snapshot.get("internal_loop", {}),
             })
             self._last_growth_eval_at = now
             self._life_drive_state = self._life_drive.evaluate(

@@ -286,9 +286,9 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
     <div class="tb-badge"><div class="dot dot-yellow" id="hw-dot"></div><span id="hw-mode">SENSOR: MOCK</span></div>
     <div class="tb-badge"><div class="dot dot-red" id="ws-dot"></div><span id="ws-mode">PROJ: OFF</span></div>
     <div class="tb-badge"><div class="dot dot-yellow" id="proj-dot"></div><span id="proj-mode">LLM: OFF</span></div>
-    <div class="tb-badge"><div class="dot dot-red" id="survival-dot"></div><span id="survival-mode">SURVIVAL: OFF</span></div>
-    <div class="tb-badge"><div class="dot dot-gray" id="bios-dot"></div><span id="bios-mode">BIOS: IDLE</span></div>
-    <div class="tb-badge"><div class="dot dot-gray" id="growth-dot"></div><span id="growth-mode">GROWTH: REFLEX SHELL</span></div>
+    <div class="tb-badge"><div class="dot dot-gray" id="metabolic-dot"></div><span id="metabolic-mode">METAB: OBSERVE</span></div>
+    <div class="tb-badge"><div class="dot dot-gray" id="reward-dot"></div><span id="reward-mode">REWARD: +0.00</span></div>
+    <div class="tb-badge"><div class="dot dot-gray" id="vector-dot"></div><span id="vector-mode">VECTOR: UNKNOWN</span></div>
   </div>
   <div class="tb-right">
     <button class="tb-btn active" id="btn-run" onclick="toggleRun()">
@@ -754,6 +754,10 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
         <div class="body-status-chip"><div class="dot dot-yellow" id="vol-dot"></div><span id="vol-mode">VOL: OFF</span></div>
         <div class="body-status-chip"><div class="dot dot-yellow" id="mem-dot"></div><span id="mem-mode">MEM: OFF</span></div>
         <div class="body-status-chip"><div class="dot dot-yellow" id="trace-dot"></div><span id="trace-mode">TRACE: OFF</span></div>
+        <div class="body-status-chip"><div class="dot dot-red" id="survival-dot"></div><span id="survival-mode">SURVIVAL: OFF</span></div>
+        <div class="body-status-chip"><div class="dot dot-gray" id="bios-dot"></div><span id="bios-mode">BIOS: IDLE</span></div>
+        <div class="body-status-chip"><div class="dot dot-gray" id="growth-dot"></div><span id="growth-mode">GROWTH: REFLEX SHELL</span></div>
+        <div class="body-status-chip"><div class="dot dot-gray" id="internal-dot"></div><span id="internal-mode">INTERNAL: IDLE</span></div>
         <div class="body-status-chip"><div class="dot dot-red" id="auto-dot"></div><span id="auto-mode">AUTONOMY: OFF</span></div>
         <div class="body-status-chip"><div class="dot dot-red" id="shell-dot"></div><span id="shell-mode">SHELL: OFF</span></div>
         <div class="body-status-chip"><div class="dot dot-red" id="selfmod-dot"></div><span id="selfmod-mode">SELF-MOD: OFF</span></div>
@@ -903,6 +907,15 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
         <div class="mind-section-title">Growth</div>
         <div class="mind-row"><span class="mind-lbl">Stage</span><span class="mind-val" id="mp-stage">--</span></div>
         <div class="mind-row"><span class="mind-lbl">Score</span><span class="mind-val" id="mp-growth-score">--</span></div>
+        <div class="mind-row"><span class="mind-lbl">Metabolic</span><span class="mind-val" id="mp-metabolic-mode">--</span></div>
+        <div class="mind-row"><span class="mind-lbl">Stability</span><span class="mind-val" id="mp-stability">--</span></div>
+        <div class="mind-row"><span class="mind-lbl">Stress</span><span class="mind-val" id="mp-stress">--</span></div>
+        <div class="mind-row"><span class="mind-lbl">Growth OK</span><span class="mind-val" id="mp-growth-allowed">--</span></div>
+        <div class="mind-row"><span class="mind-lbl">Recovery</span><span class="mind-val" id="mp-recovery">--</span></div>
+        <div class="mind-row"><span class="mind-lbl">Reward</span><span class="mind-val" id="mp-reward-trend">--</span></div>
+        <div class="mind-row"><span class="mind-lbl">Vector</span><span class="mind-val" id="mp-vector">--</span></div>
+        <div class="mind-row"><span class="mind-lbl">Internal</span><span class="mind-val" id="mp-internal">--</span></div>
+        <div class="mind-row"><span class="mind-lbl">Mutation</span><span class="mind-val" id="mp-last-mutation">--</span></div>
         <div class="mind-row"><span class="mind-lbl">Completed</span><span class="mind-val" id="mp-completed">--</span></div>
         <div class="mind-row"><span class="mind-lbl">Missing</span><span class="mind-val" id="mp-missing" style="font-size:9px;line-height:1.4">--</span></div>
         <div class="mind-row"><span class="mind-lbl">Blocked By</span><span class="mind-val" id="mp-blocked" style="font-size:9px;line-height:1.4">--</span></div>
@@ -1077,6 +1090,11 @@ function escHtml(value) {
 }
 function fmtMaybe(v, digits=1, suffix='') {
   return v === null || v === undefined || Number.isNaN(v) ? '--' : `${Number(v).toFixed(digits)}${suffix}`;
+}
+function fmtSigned(v, digits=2) {
+  if (v === null || v === undefined || Number.isNaN(v)) return '--';
+  const num = Number(v);
+  return `${num >= 0 ? '+' : ''}${num.toFixed(digits)}`;
 }
 function fmtPair(a, b, digits=1, suffix='') {
   if ([a, b].some(v => v === null || v === undefined || Number.isNaN(v))) return '--';
@@ -1476,6 +1494,11 @@ function renderMindPane() {
   const mind = window._MIND || {};
   const growth = window._GROWTH || mind.growth || {};
   const drives = window._DRIVES || mind.drives || {};
+  const metabolic = window._METABOLIC || {};
+  const reward = window._REWARD || {};
+  const vectorState = window._VECTOR_STATE || {};
+  const internalLoop = window._INTERNAL_LOOP || {};
+  const mutation = window._MUTATION || {};
   const el = id => document.getElementById(id);
 
   const set = (id, val) => { const e = el(id); if (e) e.textContent = val; };
@@ -1535,6 +1558,15 @@ function renderMindPane() {
   set('mp-stage', (growth.stage || '--').replace(/_/g,' '));
   const gScore = growth.score != null ? growth.score : growth.growth_score;
   set('mp-growth-score', gScore != null ? Number(gScore).toFixed(4) : '--');
+  set('mp-metabolic-mode', String(growth.metabolic_mode || metabolic.mode || '--').replace(/_/g,' ').toUpperCase());
+  set('mp-stability', metabolic.stability != null ? Number(metabolic.stability).toFixed(3) : '--');
+  set('mp-stress', metabolic.stress != null ? Number(metabolic.stress).toFixed(3) : '--');
+  set('mp-growth-allowed', growth.growth_allowed === true || metabolic.growth_allowed === true ? 'YES' : 'NO');
+  set('mp-recovery', growth.recovery_required === true || metabolic.recovery_required === true ? 'YES' : 'NO');
+  set('mp-reward-trend', reward.trend != null || reward.rolling_score != null ? `${fmtSigned(reward.trend ?? 0, 2)} / ${fmtSigned(reward.rolling_score ?? 0, 2)}` : '--');
+  set('mp-vector', vectorState.mode_contribution ? `${String(vectorState.mode_contribution).toUpperCase()} (${fmtMaybe(vectorState.vector_drift, 2)})` : '--');
+  set('mp-internal', internalLoop.last_prompt_type ? `${String(internalLoop.last_prompt_type).replace(/_/g,' ').toUpperCase()} → ${String(internalLoop.last_next_task || 'idle').replace(/_/g,' ')}` : 'NO GROWTH ACTION RECENTLY');
+  set('mp-last-mutation', mutation.last_decision ? String(mutation.last_decision).replace(/_/g,' ').toUpperCase() : (mutation.last_blockers && mutation.last_blockers.length ? `BLOCKED: ${mutation.last_blockers.join(', ')}` : '--'));
   set('mp-completed', Array.isArray(growth.completed_requirements) ? growth.completed_requirements.length : '--');
   set('mp-missing', Array.isArray(growth.missing_requirements) && growth.missing_requirements.length
     ? growth.missing_requirements.join(', ').replace(/_/g,' ')
@@ -2663,6 +2695,21 @@ function applySnapshot(msg) {
   if (msg.growth && typeof msg.growth === 'object') {
     window._GROWTH = msg.growth;
   }
+  if (msg.metabolic && typeof msg.metabolic === 'object') {
+    window._METABOLIC = msg.metabolic;
+  }
+  if (msg.reward && typeof msg.reward === 'object') {
+    window._REWARD = msg.reward;
+  }
+  if (msg.vector_state && typeof msg.vector_state === 'object') {
+    window._VECTOR_STATE = msg.vector_state;
+  }
+  if (msg.internal_loop && typeof msg.internal_loop === 'object') {
+    window._INTERNAL_LOOP = msg.internal_loop;
+  }
+  if (msg.mutation && typeof msg.mutation === 'object') {
+    window._MUTATION = msg.mutation;
+  }
   if (msg.trace && Array.isArray(msg.trace)) {
     window._TRACE = msg.trace;
     updateTraceStatus(true);
@@ -2947,6 +2994,10 @@ function updatePhase8Panel(msg) {
   const bios = msg.bios || {};
   const mutation = msg.mutation || {};
   const cpp = msg.cpp_bridge || {};
+  const metabolic = msg.metabolic || {};
+  const reward = msg.reward || {};
+  const vectorState = msg.vector_state || {};
+  const internalLoop = msg.internal_loop || {};
 
   const setBadge = (dotId, modeId, text, color) => {
     const dot = document.getElementById(dotId);
@@ -2956,16 +3007,41 @@ function updatePhase8Panel(msg) {
   };
   const setText = (id, v) => { const el=document.getElementById(id); if(el) el.textContent = (v === undefined || v === null || v === '') ? '—' : v; };
 
+  const metabolicMode = String(metabolic.mode || 'observe').replace(/_/g, ' ').toUpperCase();
+  const metabolicColor = metabolic.recovery_required ? 'red'
+    : metabolic.mode === 'grow' ? 'green'
+    : metabolic.mode === 'mutate' || metabolic.mode === 'evaluate' || metabolic.mode === 'reproduce' ? 'cyan'
+    : metabolic.mode === 'stabilize' ? 'yellow' : 'gray';
+  setBadge('metabolic-dot', 'metabolic-mode', `METAB: ${metabolicMode}`, metabolicColor);
+  const rewardValue = reward.trend != null ? reward.trend : reward.rolling_score;
+  const rewardColor = rewardValue > 0.05 ? 'green' : rewardValue < -0.05 ? 'red' : 'gray';
+  setBadge('reward-dot', 'reward-mode', `REWARD: ${fmtSigned(rewardValue || 0, 2)}`, rewardColor);
+  const vectorMode = String(vectorState.mode_contribution || 'unknown').toUpperCase();
+  const vectorColor = vectorState.mode_contribution === 'stable' ? 'green'
+    : vectorState.mode_contribution === 'drift' ? 'yellow'
+    : vectorState.mode_contribution === 'anomaly' ? 'red' : 'gray';
+  setBadge('vector-dot', 'vector-mode', `VECTOR: ${vectorMode}`, vectorColor);
+
   const biosRunning = !!bios.running;
   setBadge('bios-dot', 'bios-mode', biosRunning ? `BIOS: RUNNING ${String(bios.last_task || '').toUpperCase()}` : `BIOS: ${bios.last_task ? 'LAST ' + String(bios.last_task).toUpperCase() : 'IDLE'}`, biosRunning ? 'green' : 'gray');
-  setBadge('growth-dot', 'growth-mode', `GROWTH: ${String(growth.stage || 'unknown').replace(/_/g,' ').toUpperCase()}`, (growth.missing_requirements || []).length ? 'yellow' : 'green');
+  const growthText = growth.recovery_required
+    ? 'GROWTH: PAUSED / RECOVERY'
+    : `GROWTH: ${String(growth.stage || 'unknown').replace(/_/g,' ').toUpperCase()}`;
+  setBadge('growth-dot', 'growth-mode', growthText, growth.recovery_required ? 'red' : (growth.missing_requirements || []).length ? 'yellow' : 'green');
+  const internalText = internalLoop.last_prompt_type
+    ? `INTERNAL: ${String(internalLoop.last_prompt_type).replace(/_/g,' ').toUpperCase()}`
+    : 'INTERNAL: IDLE';
+  const internalColor = internalLoop.last_prompt_type ? (internalLoop.invalid_json_count ? 'yellow' : 'green') : 'gray';
+  setBadge('internal-dot', 'internal-mode', internalText, internalColor);
   const mutationText = !mutation.enabled ? 'MUTATION: OFF'
-    : mutation.candidate_available ? 'MUTATION: CANDIDATE'
+    : mutation.last_decision === 'candidate_for_migration' ? 'MUTATION: CANDIDATE'
+    : mutation.last_decision === 'keep_for_review' || mutation.candidate_available ? 'MUTATION: KEEP_FOR_REVIEW'
     : mutation.last_sandbox ? 'MUTATION: SANDBOX'
     : mutation.sandbox_root_exists ? 'MUTATION: READY'
     : 'MUTATION: OFF';
   const mutationColor = !mutation.enabled ? 'gray'
-    : mutation.candidate_available ? 'green'
+    : mutation.last_decision === 'candidate_for_migration' ? 'green'
+    : mutation.last_decision === 'keep_for_review' || mutation.candidate_available ? 'cyan'
     : mutation.last_sandbox ? 'yellow'
     : mutation.sandbox_root_exists ? 'cyan' : 'gray';
   setBadge('mutation-dot', 'mutation-mode', mutationText, mutationColor);

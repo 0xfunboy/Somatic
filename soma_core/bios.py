@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from soma_core.internal_prompts import growth_diagnosis_prompt
+from soma_core.config import CFG
 
 
 _REPO_ROOT = Path(__file__).parent.parent.resolve()
@@ -48,6 +49,11 @@ class BiosLoop:
         life_drive: Any = None,
         mutation: Any = None,
         cpp_bridge: Any = None,
+        metabolic_engine: Any = None,
+        internal_loop: Any = None,
+        reward_engine: Any = None,
+        vector_interpreter: Any = None,
+        power_policy: Any = None,
         call_llm_raw: Callable[[str, float], str | None] | None = None,
         data_root: Path | None = None,
     ) -> None:
@@ -70,6 +76,11 @@ class BiosLoop:
         self._life_drive = life_drive
         self._mutation = mutation
         self._cpp_bridge = cpp_bridge
+        self._metabolic_engine = metabolic_engine
+        self._internal_loop = internal_loop
+        self._reward_engine = reward_engine
+        self._vector_interpreter = vector_interpreter
+        self._power_policy = power_policy
         self._call_llm_raw = call_llm_raw
         self._data_root = data_root or (_REPO_ROOT / "data" / "mind")
         self._history_path = self._data_root / "bios_history.jsonl"
@@ -84,6 +95,10 @@ class BiosLoop:
             "run_count": 0,
             "useful_cycles": 0,
             "llm_calls_today": 0,
+            "metabolic_mode": "observe",
+            "last_internal_decision": {},
+            "last_internal_prompt": "",
+            "last_evidence": {},
         })
         self._run_times: list[float] = []
         self._llm_times: list[float] = []
@@ -107,9 +122,49 @@ class BiosLoop:
         self._state["running"] = True
         growth = (snapshot.get("_growth") or {}) if isinstance(snapshot, dict) else {}
         context = self._build_context(snapshot, growth)
-        task = self._select_task(context)
+        if self._metabolic_engine is not None:
+            metabolic = self._metabolic_engine.current()
+            if not metabolic or not metabolic.get("timestamp"):
+                metabolic = self._metabolic_engine.update(snapshot, context)
+        else:
+            metabolic = snapshot.get("metabolic", {}) if isinstance(snapshot, dict) else {}
+        context["metabolic"] = metabolic
+        context["growth"] = growth
+        mode = str((metabolic or {}).get("mode") or "observe")
+        self._state["metabolic_mode"] = mode
+        internal_record: dict[str, Any] | None = None
+        if self._internal_loop is not None and mode in {"grow", "mutate", "evaluate", "reproduce"}:
+            internal_record = self._internal_loop.run_growth_cycle(context)
+        elif self._internal_loop is not None and mode == "recover":
+            internal_record = self._internal_loop.run_recovery_cycle(context)
+
+        if internal_record is not None:
+            task = {
+                "task": str(internal_record.get("next_task") or internal_record.get("action_taken", {}).get("action_type") or mode),
+                "reason": f"metabolic:{mode}",
+                "requires_shell": False,
+            }
+            evidence = internal_record.get("evidence") or {}
+            reward = internal_record.get("reward") or {}
+            action = internal_record.get("action_taken") or {}
+            result = {
+                "ok": bool(evidence.get("ok", True)),
+                "summary": f"{action.get('action_type', 'observe')}: {str(action.get('goal') or evidence.get('reason') or evidence.get('command') or 'no summary')[:220]}",
+                "meaningful": bool(evidence) or bool(reward),
+                "evidence": evidence,
+                "reward": reward,
+                "internal_record": internal_record,
+            }
+            self._state["last_internal_decision"] = internal_record.get("parsed") or action
+            self._state["last_internal_prompt"] = str(internal_record.get("prompt") or "")
+            self._state["last_evidence"] = evidence
+        else:
+            task = self._select_task(context)
+            self._state["last_internal_decision"] = {}
+            self._state["last_internal_prompt"] = ""
+            result = self._execute_task(task, snapshot, context)
+            self._state["last_evidence"] = result.get("data") or result.get("evidence") or {}
         self._emit("bios_task_started", f"BIOS task started: {task['task']}", outputs={"reason": task.get("reason", "")})
-        result = self._execute_task(task, snapshot, context)
         useful = bool(result.get("meaningful") or result.get("ok") or result.get("lessons"))
         if useful:
             self._state["useful_cycles"] = int(self._state.get("useful_cycles", 0)) + 1
@@ -120,6 +175,7 @@ class BiosLoop:
             "last_result": result.get("summary", result.get("status", "")),
             "tasks_today": int(self._state.get("tasks_today", 0)) + 1,
             "run_count": int(self._state.get("run_count", 0)) + 1,
+            "last_mode": mode,
         })
         self._run_times.append(now)
         self._append_history({"timestamp": now, "reason": reason, "task": task, "result": result})
@@ -142,6 +198,9 @@ class BiosLoop:
         cpp_status = self._cpp_bridge.status() if self._cpp_bridge is not None else {}
         baseline_summary = self._baseline_store.summary() if self._baseline_store is not None else {}
         life_drive = self._life_drive.evaluate(snapshot, growth, {"autobiography": autobio_quality}) if self._life_drive is not None else {}
+        reward = self._reward_engine.summary() if self._reward_engine is not None else {}
+        vector_state = snapshot.get("vector_state") or {}
+        internal_status = self._internal_loop.status() if self._internal_loop is not None else {}
         return {
             "growth_stage": growth.get("stage"),
             "missing_requirements": growth.get("missing_requirements", []),
@@ -155,10 +214,29 @@ class BiosLoop:
             "mutation": mutation_status,
             "life_drive": life_drive,
             "autobiography": autobio_quality,
+            "reward": reward,
+            "vector_state": vector_state,
+            "internal_loop": internal_status,
+            "recent_events": self._recent_failures(),
+            "capabilities": {
+                "survival_policy": self._executor is not None,
+                "cpp_bridge": bool(cpp_status),
+            },
+            "identity": {"name": "Soma", "kind": "embodied local software organism"},
+            "cpp_bridge_obj": self._cpp_bridge,
         }
 
     def _select_task(self, context: dict[str, Any]) -> dict[str, Any]:
         missing = context.get("missing_requirements", [])
+        metabolic = context.get("metabolic", {}) or {}
+        mode = str(metabolic.get("mode") or "observe")
+        if mode == "stabilize":
+            return {"task": "inspect_recent_failures", "reason": "metabolic mode requests stabilization", "requires_shell": False}
+        if mode == "observe":
+            return {"task": "check_runtime_storage", "reason": "observe mode gathers cheap evidence", "requires_shell": False}
+
+        baseline_keys = (context.get("body_baselines", {}) or {}).get("keys", {})
+        baseline_ready = bool(baseline_keys.get("idle_cpu_percent", {}).get("confidence", 0.0) >= CFG.growth_stability_threshold)
         if self.use_llm and self._call_llm_raw is not None and len(self._llm_times) < self.max_llm_calls_per_hour:
             prompt = growth_diagnosis_prompt(context)
             raw = self._call_llm_raw(prompt, min(self.task_timeout_sec, 20.0))
@@ -167,7 +245,7 @@ class BiosLoop:
             task = self._parse_llm_task(raw)
             if task is not None:
                 return task
-        if any("baseline" in item for item in missing):
+        if any("baseline" in item for item in missing) and not baseline_ready:
             return {"task": "update_body_baseline", "reason": "growth blocker: baseline missing", "requires_shell": False}
         if any("command" in item or "execution" in item for item in missing):
             return {"task": "verify_environment_fact", "reason": "growth blocker: command agency", "requires_shell": True, "command": "uname -r"}
@@ -198,6 +276,12 @@ class BiosLoop:
             return {"ok": True, "summary": f"recent failures: {len(failures)}", "meaningful": bool(failures), "data": failures}
         if name == "check_runtime_storage":
             return {"ok": True, "summary": self._runtime_storage_status(), "meaningful": True}
+        if name == "observe_vector_state":
+            vector_state = context.get("vector_state", {})
+            return {"ok": True, "summary": f"vector={vector_state.get('mode_contribution', 'unknown')} drift={vector_state.get('vector_drift', 0.0)}", "meaningful": bool(vector_state), "data": vector_state}
+        if name == "observe_reward_trend":
+            reward = context.get("reward", {})
+            return {"ok": True, "summary": f"reward trend={reward.get('trend', 0.0)} rolling={reward.get('rolling_score', 0.0)}", "meaningful": bool(reward), "data": reward}
         if name == "propose_micro_improvement":
             return {"ok": True, "summary": "queued micro improvement proposal", "meaningful": True}
         if name == "run_light_validation":
@@ -220,8 +304,18 @@ class BiosLoop:
         if name == "prepare_mutation_candidate":
             if self._mutation is None:
                 return {"ok": False, "summary": "mutation sandbox unavailable"}
-            sandbox = self._mutation.create_sandbox(task.get("reason", "bios"))
-            return {"ok": bool(sandbox.get("ok")), "summary": f"sandbox created at {sandbox.get('sandbox_path', '')}", "meaningful": bool(sandbox.get("ok"))}
+            sandbox = self._mutation.create_child_if_allowed(
+                task.get("reason", "bios"),
+                context.get("metabolic", {}) or {},
+                growth=context.get("growth", {}) or {},
+                reward=context.get("reward", {}) or {},
+            )
+            return {
+                "ok": bool(sandbox.get("ok")),
+                "summary": sandbox.get("summary", f"sandbox created at {sandbox.get('sandbox_path', '')}"),
+                "meaningful": bool(sandbox.get("ok")),
+                "data": sandbox,
+            }
         if name == "check_cpp_bridge":
             if self._cpp_bridge is None:
                 return {"ok": False, "summary": "cpp bridge unavailable"}

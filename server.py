@@ -58,6 +58,12 @@ from soma_core.command_planner import command_category, deterministic_shortcut, 
 from soma_core.skill_router import SkillRouter
 from soma_core.cpp_bridge import CppBridge
 from soma_core.mutation import MutationSandbox
+from soma_core.metabolism import MetabolicEngine
+from soma_core.vector_interpreter import VectorInterpreter
+from soma_core.reward import RewardEngine
+from soma_core.power_policy import PowerPolicy
+from soma_core.internal_loop import InternalLoop
+from soma_core.introspection import IntrospectionRouter
 from soma_core.config import CFG as _cfg_ref
 
 WS_HOST = "0.0.0.0"
@@ -520,11 +526,16 @@ _experience = ExperienceDistiller()
 _baseline_store = BodyBaselineStore()
 _growth_engine = GrowthEngine()
 _life_drive = LifeDrive()
+_vector_interpreter = VectorInterpreter()
+_reward_engine = RewardEngine()
+_power_policy = PowerPolicy()
+_metabolic_engine = MetabolicEngine()
+_introspection_router = IntrospectionRouter()
 
 _soma_memory = SomaMemory()
 _goal_store = GoalStore()
 _autobiography: Autobiography | None = Autobiography() if _cfg_ref.autobiography_enabled else None
-_skill_router = SkillRouter(_autobiography)
+_skill_router = SkillRouter(_autobiography, introspector=_introspection_router)
 _reflection_engine = ReflectionEngine(
     _soma_memory,
     _goal_store,
@@ -571,6 +582,16 @@ _self_improvement: SelfImprovementWorkflow | None = None
 _mutation_sandbox: MutationSandbox | None = None
 _cpp_bridge: CppBridge | None = None
 _bios_loop: BiosLoop | None = None
+_internal_loop: InternalLoop | None = InternalLoop(
+    call_llm_raw=None,
+    executor=_autonomous_exec,
+    trace=_soma_mind._trace,
+    reward=_reward_engine,
+    power_policy=_power_policy,
+    mutation=None,
+    autobiography=_autobiography,
+    experience=_experience,
+)
 
 if _cfg_ref.journal_enabled:
     _journal = JournalManager(
@@ -618,7 +639,13 @@ if _cfg_ref.mutation_sandbox:
         mutation_root=_cfg_ref.mutation_root,
         ws_port=_cfg_ref.mutation_sandbox_ws_port,
         http_port=_cfg_ref.mutation_sandbox_http_port,
+        power_policy=_power_policy,
+        reward_engine=_reward_engine,
+        autobiography=_autobiography,
+        experience=_experience,
     )
+    if _internal_loop is not None:
+        _internal_loop._mutation = _mutation_sandbox  # type: ignore[attr-defined]
 
 if _cfg_ref.cpp_bridge:
     _cpp_bridge = CppBridge(
@@ -654,6 +681,11 @@ if _cfg_ref.bios_loop:
         life_drive=_life_drive,
         mutation=_mutation_sandbox,
         cpp_bridge=_cpp_bridge,
+        metabolic_engine=_metabolic_engine,
+        internal_loop=_internal_loop,
+        reward_engine=_reward_engine,
+        vector_interpreter=_vector_interpreter,
+        power_policy=_power_policy,
         call_llm_raw=None,  # wired after call_llm_raw exists
     )
 
@@ -2054,6 +2086,8 @@ if _nightly_reflection is not None:
     _nightly_reflection._call_llm_raw = call_llm_raw  # type: ignore[attr-defined]
 if _bios_loop is not None:
     _bios_loop._call_llm_raw = call_llm_raw  # type: ignore[attr-defined]
+if _internal_loop is not None:
+    _internal_loop._call_llm_raw = call_llm_raw  # type: ignore[attr-defined]
 
 
 async def broadcast_ds_turn(
@@ -2426,6 +2460,7 @@ def build_snapshot() -> dict[str, Any]:
         "projector_ms": tensor["projector_ms"],
     }
     snapshot["sample_minutes"] = round((time.time() - float(runtime.get("started_at", time.time()))) / 60.0, 3)
+    snapshot["llm"] = build_llm_status(snapshot)
     baseline_update = _baseline_store.update_from_snapshot(snapshot)
     snapshot["baseline_update"] = baseline_update
     snapshot["baselines"] = _baseline_store.summary()
@@ -2461,8 +2496,26 @@ def build_snapshot() -> dict[str, Any]:
         "last_nightly_reflection": "",
         "shallow": True,
     }
-    snapshot["cpp_bridge_status"] = _cpp_bridge.status() if _cpp_bridge is not None else {"enabled": False, "status": "missing"}
+    snapshot["cpp_bridge_status"] = _cpp_bridge.run_projection_once(snapshot) if _cpp_bridge is not None else {"enabled": False, "status": "missing"}
     snapshot["mutation_status"] = _mutation_sandbox.status() if _mutation_sandbox is not None else {"enabled": False, "recommendation": ""}
+    snapshot["reward"] = _reward_engine.summary()
+    snapshot["internal_loop"] = _internal_loop.status() if _internal_loop is not None else {"enabled": False}
+    snapshot["_growth"] = _soma_memory.get_growth()
+    snapshot["vector_state"] = _vector_interpreter.interpret(snapshot)
+    snapshot["metabolic"] = _metabolic_engine.update(
+        snapshot,
+        {
+            "growth": snapshot["_growth"],
+            "reward": snapshot["reward"],
+            "vector_state": snapshot["vector_state"],
+            "mutation": snapshot["mutation_status"],
+            "cpp_bridge": snapshot["cpp_bridge_status"],
+            "command_agency": snapshot["command_agency"],
+            "llm_mode": snapshot["llm"].get("mode"),
+            "llm_available": snapshot["llm"].get("available"),
+            "capabilities": {"survival_policy": _autonomous_exec is not None},
+        },
+    )
     snapshot["bios_status"] = _bios_loop.status() if _bios_loop is not None else {"enabled": False}
     snapshot["summary"] = build_summary(snapshot)
     snapshot["policy"] = build_policy_state(snapshot)
@@ -2478,6 +2531,22 @@ def build_snapshot() -> dict[str, Any]:
     snapshot["_growth"] = mind_state.get("growth", {})
     snapshot["_trace"] = mind_state.get("trace", [])
     snapshot["life_drive"] = mind_state.get("life_drive", {})
+    snapshot["internal_loop"] = _internal_loop.status() if _internal_loop is not None else snapshot["internal_loop"]
+    snapshot["reward"] = _reward_engine.summary()
+    snapshot["metabolic"] = _metabolic_engine.update(
+        snapshot,
+        {
+            "growth": snapshot["_growth"],
+            "reward": snapshot["reward"],
+            "vector_state": snapshot["vector_state"],
+            "mutation": snapshot["mutation_status"],
+            "cpp_bridge": snapshot["cpp_bridge_status"],
+            "command_agency": snapshot["command_agency"],
+            "llm_mode": snapshot["llm"].get("mode"),
+            "llm_available": snapshot["llm"].get("available"),
+            "capabilities": {"survival_policy": _autonomous_exec is not None},
+        },
+    )
     runtime["last_snapshot"] = snapshot
     remember_somatic_trace(snapshot)
     consolidate_memory(snapshot)
@@ -2513,6 +2582,23 @@ def build_snapshot() -> dict[str, Any]:
                 last_user_interaction_at=float(runtime.get("last_user_message_at", 0.0)),
             )
             snapshot["bios_status"] = _bios_loop.status()
+            snapshot["internal_loop"] = _internal_loop.status() if _internal_loop is not None else snapshot["internal_loop"]
+            snapshot["mutation_status"] = _mutation_sandbox.status() if _mutation_sandbox is not None else snapshot["mutation_status"]
+            snapshot["reward"] = _reward_engine.summary()
+            snapshot["metabolic"] = _metabolic_engine.update(
+                snapshot,
+                {
+                    "growth": snapshot["_growth"],
+                    "reward": snapshot["reward"],
+                    "vector_state": snapshot["vector_state"],
+                    "mutation": snapshot["mutation_status"],
+                    "cpp_bridge": snapshot["cpp_bridge_status"],
+                    "command_agency": snapshot["command_agency"],
+                    "llm_mode": snapshot["llm"].get("mode"),
+                    "llm_available": snapshot["llm"].get("available"),
+                    "capabilities": {"survival_policy": _autonomous_exec is not None},
+                },
+            )
         except Exception:
             pass
 
@@ -2617,6 +2703,10 @@ def public_payload(snapshot: dict[str, Any], *, llm_override: dict[str, Any] | N
         "bios": snapshot.get("bios_status", {}),
         "mutation": snapshot.get("mutation_status", {}),
         "cpp_bridge": snapshot.get("cpp_bridge_status", {}),
+        "metabolic": snapshot.get("metabolic", {}),
+        "vector_state": snapshot.get("vector_state", {}),
+        "reward": snapshot.get("reward", {}),
+        "internal_loop": snapshot.get("internal_loop", {}),
         "autobiography": snapshot.get("autobiography_quality", {}),
         "life_drive": snapshot.get("life_drive", {}),
         "baselines": snapshot.get("baselines", {}),
@@ -2915,6 +3005,7 @@ async def handler(websocket: ServerConnection):
                 skill_result = _skill_router.execute(user_text, {"snapshot": snapshot, "growth": snapshot.get("_growth", {})})
                 if operator_lessons:
                     _experience.save_lessons(operator_lessons)
+                    _reward_engine.record_reward("operator_correction", -0.12, {"user_text": user_text[:240]})
                     if _autobiography is not None:
                         for lesson in operator_lessons:
                             _autobiography.write_meaningful_event({
@@ -2964,6 +3055,7 @@ async def handler(websocket: ServerConnection):
                     except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError) as exc:
                         runtime["llm_last_failure_at"] = time.monotonic()
                         print(f"[LLM] Request failed: {exc}")
+                        _reward_engine.record_reward("llm_timeout", -0.16, {"error": str(exc)[:240], "user_text": user_text[:240]})
                         llm_reply = None
 
                 if llm_reply is None:
@@ -2991,6 +3083,16 @@ async def handler(websocket: ServerConnection):
                     llm_text=llm_reply.get("speech") if isinstance(llm_reply, dict) else None,
                 )
                 llm_reply["speech"] = final_text
+
+                if cap_result is not None and cap_result.get("ok"):
+                    _reward_engine.record_reward("command_finalized", 0.18, {"cmd": str(cap_result.get("cmd") or "")[:200]})
+                elif cap_result is not None and not cap_result.get("ok"):
+                    _reward_engine.record_reward("test_failed", -0.16, {"cmd": str(cap_result.get("cmd") or "")[:200], "stderr": str(cap_result.get("stderr") or "")[:200]})
+                elif skill_result is not None and skill_result.get("ok"):
+                    reward_kind = "lesson_produced" if str(skill_result.get("skill_id") or "").startswith("introspection.") else "skill_success"
+                    reward_value = 0.08 if reward_kind == "lesson_produced" else 0.14
+                    _reward_engine.record_reward(reward_kind, reward_value, {"skill_id": str(skill_result.get("skill_id") or "")[:120]})
+                snapshot["reward"] = _reward_engine.summary()
 
                 await broadcast_ds_turn("deepseek", llm_reply.get("speech", "")[:400], "chat")
                 remember_dialogue_turn("assistant", final_text, snapshot)
