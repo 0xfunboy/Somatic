@@ -37,7 +37,7 @@ class SomaConfig:
     # ── LLM ───────────────────────────────────────────────────────────────────
     llm_mode: str = field(default_factory=lambda: _str("SOMA_LLM_MODE", "off").lower())
     llm_timeout_s: float = field(default_factory=lambda: _float("SOMA_LLM_TIMEOUT_SEC", 30.0))
-    reflection_interval_s: float = field(default_factory=lambda: _float("SOMA_REFLECTION_INTERVAL_SEC", 120.0))
+    reflection_interval_s: float = field(default_factory=lambda: _float("SOMA_REFLECTION_INTERVAL_SEC", 600.0))
     goal_update_interval_s: float = field(default_factory=lambda: _float("SOMA_GOAL_UPDATE_INTERVAL_SEC", 30.0))
     speech_cooldown_s: float = field(default_factory=lambda: _float("SOMA_SPONTANEOUS_SPEECH_COOLDOWN_SEC", 90.0))
 
@@ -66,6 +66,10 @@ class SomaConfig:
 
     # ── timing ────────────────────────────────────────────────────────────────
     tick_hz: float = field(default_factory=lambda: _float("SOMA_TICK_HZ", 2.0))
+    cognitive_tick_hz: float = field(default_factory=lambda: _float("SOMA_COGNITIVE_TICK_HZ", 5.0))
+    mind_pulse_sec: float = field(default_factory=lambda: _float("SOMA_MIND_PULSE_SEC", 30.0))
+    growth_eval_interval_s: float = field(default_factory=lambda: _float("SOMA_GROWTH_EVAL_INTERVAL_SEC", 120.0))
+    autobiography_min_interval_s: float = field(default_factory=lambda: _float("SOMA_AUTOBIOGRAPHY_MIN_INTERVAL_SEC", 300.0))
 
     # ── trace persistence ─────────────────────────────────────────────────────
     trace_persistence: str = field(default_factory=lambda: _str("SOMA_TRACE_PERSISTENCE", "important"))
@@ -102,6 +106,37 @@ class SomaConfig:
     self_improvement_max_files: int = field(default_factory=lambda: int(_float("SOMA_SELF_IMPROVEMENT_MAX_FILES", 5.0)))
     self_improvement_max_diff_lines: int = field(default_factory=lambda: int(_float("SOMA_SELF_IMPROVEMENT_MAX_DIFF_LINES", 500.0)))
     self_improvement_require_tests: bool = field(default_factory=lambda: _bool("SOMA_SELF_IMPROVEMENT_REQUIRE_TESTS", True))
+
+    # ── BIOS loop ─────────────────────────────────────────────────────────────
+    bios_loop: bool = field(default_factory=lambda: _bool("SOMA_BIOS_LOOP", True))
+    bios_interval_sec: float = field(default_factory=lambda: _float("SOMA_BIOS_INTERVAL_SEC", 300.0))
+    bios_idle_only: bool = field(default_factory=lambda: _bool("SOMA_BIOS_IDLE_ONLY", False))
+    bios_use_llm: bool = field(default_factory=lambda: _bool("SOMA_BIOS_USE_LLM", True))
+    bios_max_tasks_per_hour: int = field(default_factory=lambda: int(_float("SOMA_BIOS_MAX_TASKS_PER_HOUR", 12.0)))
+    bios_max_llm_calls_per_hour: int = field(default_factory=lambda: int(_float("SOMA_BIOS_MAX_LLM_CALLS_PER_HOUR", 12.0)))
+    bios_task_timeout_sec: float = field(default_factory=lambda: _float("SOMA_BIOS_TASK_TIMEOUT_SEC", 60.0))
+    bios_write_memory: bool = field(default_factory=lambda: _bool("SOMA_BIOS_WRITE_MEMORY", True))
+    bios_mutation_proposal_interval_sec: float = field(default_factory=lambda: _float("SOMA_BIOS_MUTATION_PROPOSAL_INTERVAL_SEC", 1800.0))
+
+    # ── mutation sandbox ──────────────────────────────────────────────────────
+    mutation_sandbox: bool = field(default_factory=lambda: _bool("SOMA_MUTATION_SANDBOX", True))
+    mutation_root: str = field(default_factory=lambda: _str("SOMA_MUTATION_ROOT", "/home/funboy/latent-somatic-mutants"))
+    mutation_auto_apply: bool = field(default_factory=lambda: _bool("SOMA_MUTATION_AUTO_APPLY", False))
+    mutation_auto_create_sandbox: bool = field(default_factory=lambda: _bool("SOMA_MUTATION_AUTO_CREATE_SANDBOX", True))
+    mutation_max_per_day: int = field(default_factory=lambda: int(_float("SOMA_MUTATION_MAX_PER_DAY", 3.0)))
+    mutation_require_operator_approval_for_migration: bool = field(default_factory=lambda: _bool("SOMA_MUTATION_REQUIRE_OPERATOR_APPROVAL_FOR_MIGRATION", True))
+    mutation_run_tests: bool = field(default_factory=lambda: _bool("SOMA_MUTATION_RUN_TESTS", True))
+    mutation_smoke_test: bool = field(default_factory=lambda: _bool("SOMA_MUTATION_SMOKE_TEST", True))
+    mutation_sandbox_ws_port: int = field(default_factory=lambda: int(_float("SOMA_MUTATION_SANDBOX_WS_PORT", 8875.0)))
+    mutation_sandbox_http_port: int = field(default_factory=lambda: int(_float("SOMA_MUTATION_SANDBOX_HTTP_PORT", 8880.0)))
+
+    # ── C++ bridge ────────────────────────────────────────────────────────────
+    cpp_bridge: bool = field(default_factory=lambda: _bool("SOMA_CPP_BRIDGE", True))
+    cpp_binary: str = field(default_factory=lambda: _str("SOMA_CPP_BINARY", "/home/funboy/latent-somatic/build/latent_somatic"))
+    cpp_auto_build: bool = field(default_factory=lambda: _bool("SOMA_CPP_AUTO_BUILD", False))
+    cpp_smoke_test_on_start: bool = field(default_factory=lambda: _bool("SOMA_CPP_SMOKE_TEST_ON_START", True))
+    cpp_use_for_projection: bool = field(default_factory=lambda: _bool("SOMA_CPP_USE_FOR_PROJECTION", False))
+    cpp_llama_cpp_root: str = field(default_factory=lambda: _str("SOMA_CPP_LLAMA_CPP_ROOT", "/home/funboy/llama.cpp"))
 
     @property
     def any_exec_active(self) -> bool:

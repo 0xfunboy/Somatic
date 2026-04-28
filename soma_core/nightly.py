@@ -396,6 +396,13 @@ class NightlyReflection:
 
         return self._run_reflection(date=today_str, use_llm=NIGHTLY_USE_LLM)
 
+    def _autobiography_root(self) -> Path | None:
+        root = getattr(self._autobiography, "_root", None)
+        try:
+            return Path(root) if root else None
+        except TypeError:
+            return None
+
     def _run_reflection(self, date: str | None, *, use_llm: bool) -> dict[str, Any]:
         date_str = date if date else _date_str()
         started_at = time.time()
@@ -419,9 +426,12 @@ class NightlyReflection:
             jsonl_path = _DAILY_DIR / f"{date_str}.jsonl"
             auto_events = _load_jsonl(jsonl_path, limit=100)
 
+        auto_root = self._autobiography_root()
+        mind_root = auto_root.parent / "mind" if auto_root is not None else _MIND_DIR
+
         # Recent reflections (from memory)
         recent_reflections: list[dict[str, Any]] = []
-        reflections_file = _MIND_DIR / "reflections.jsonl"
+        reflections_file = mind_root / "reflections.jsonl"
         recent_reflections = _load_jsonl(reflections_file, limit=10)
 
         # Capability events
@@ -438,14 +448,13 @@ class NightlyReflection:
                 pass
 
         # Goals
-        goals_file = _MIND_DIR / "goals.json"
+        goals_file = mind_root / "goals.json"
         goals_data = _load_json(goals_file, {"active_goals": [], "completed_goals": []})
 
         # Self model
-        self_model = _load_json(_MIND_DIR / "self_model.json", {})
-        narrative = _load_json(
-            _REPO_ROOT / "data" / "autobiography" / "self_narrative.json", {}
-        )
+        self_model = _load_json(mind_root / "self_model.json", {})
+        narrative_path = auto_root / "self_narrative.json" if auto_root is not None else (_REPO_ROOT / "data" / "autobiography" / "self_narrative.json")
+        narrative = _load_json(narrative_path, {})
 
         # ── Build deterministic markdown ──────────────────────────────────────
         md_content = _build_markdown(
@@ -469,15 +478,8 @@ class NightlyReflection:
             except Exception:
                 pass  # fall back to deterministic version silently
 
-        # ── Write daily markdown ──────────────────────────────────────────────
         daily_md_path = _DAILY_DIR / f"{date_str}.md"
         md_written = False
-        try:
-            _DAILY_DIR.mkdir(parents=True, exist_ok=True)
-            daily_md_path.write_text(md_content, encoding="utf-8")
-            md_written = True
-        except OSError:
-            pass
 
         # ── Compact logs ──────────────────────────────────────────────────────
         compact_result: dict[str, Any] = {}
@@ -492,8 +494,8 @@ class NightlyReflection:
         result: dict[str, Any] = {
             "timestamp": started_at,
             "date": date_str,
-            "status": "completed" if md_written else "partial",
-            "md_path": str(daily_md_path) if md_written else None,
+            "status": "partial",
+            "md_path": None,
             "events_count": len(auto_events),
             "reflections_count": len(recent_reflections),
             "llm_used": llm_used,
@@ -501,14 +503,11 @@ class NightlyReflection:
             "elapsed_s": round(elapsed, 3),
         }
 
-        # ── Persist to nightly_reflections.jsonl ──────────────────────────────
-        _append_jsonl(_NIGHTLY_LOG, result)
-
         # ── Write autobiography event ─────────────────────────────────────────
         if self._autobiography is not None:
             try:
                 self._autobiography.write_event({
-                    "kind": "milestone",
+                    "kind": "nightly_reflection",
                     "title": f"Nightly reflection — {date_str}",
                     "summary": (
                         f"Daily summary generated. {len(auto_events)} events processed. "
@@ -531,6 +530,21 @@ class NightlyReflection:
                 )
             except Exception:
                 pass
+
+        # ── Write nightly markdown last so autobiography page generation cannot
+        #    overwrite the reflection report for this path.
+        try:
+            _DAILY_DIR.mkdir(parents=True, exist_ok=True)
+            daily_md_path.write_text(md_content, encoding="utf-8")
+            md_written = True
+        except OSError:
+            md_written = False
+
+        result["status"] = "completed" if md_written else "partial"
+        result["md_path"] = str(daily_md_path) if md_written else None
+
+        # ── Persist to nightly_reflections.jsonl ──────────────────────────────
+        _append_jsonl(_NIGHTLY_LOG, result)
 
         return result
 

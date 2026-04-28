@@ -46,6 +46,19 @@ from soma_core.autobiography import Autobiography
 from soma_core.routines import RoutineRunner
 from soma_core.nightly import NightlyReflection
 from soma_core.self_improvement import SelfImprovementWorkflow
+from soma_core.answering import AnswerFinalizer
+from soma_core.relevance import RelevanceFilter
+from soma_core.output_filter import OutputFilter
+from soma_core.experience import ExperienceDistiller
+from soma_core.baselines import BodyBaselineStore
+from soma_core.growth_engine import GrowthEngine
+from soma_core.life_drive import LifeDrive
+from soma_core.bios import BiosLoop
+from soma_core.command_planner import command_category, deterministic_shortcut, is_runtime_log_question, planner_prompt
+from soma_core.skill_router import SkillRouter
+from soma_core.cpp_bridge import CppBridge
+from soma_core.mutation import MutationSandbox
+from soma_core.config import CFG as _cfg_ref
 
 WS_HOST = "0.0.0.0"
 WS_PORT = 8765
@@ -190,12 +203,8 @@ _TELEMETRY_KEYWORDS: frozenset[str] = frozenset({
 
 
 def _telemetry_relevant(user_text: str) -> bool:
-    """Return True if the user's question warrants somatic telemetry in the answer."""
-    if "[SHELL_RESULT]" in user_text:
-        # Command result answers are self-contained; body data is not needed.
-        return False
-    low = user_text.lower()
-    return any(kw in low for kw in _TELEMETRY_KEYWORDS)
+    snapshot = runtime.get("last_snapshot") or {}
+    return _relevance_filter.telemetry_relevant(user_text, snapshot=snapshot)
 
 FALLBACK_RESPONSES = {
     "greet": [
@@ -219,8 +228,8 @@ FALLBACK_RESPONSES = {
         "I am an embodied interface. Sensor state becomes V_s in R^4096 and that state conditions how I answer.",
     ],
     "_default": [
-        "I hear you. My current somatic context is {summary}. What part do you want to explore?",
-        "I am processing that with a live body state: {summary}. Ask about heat, power, or stability if you want specifics.",
+        "Non ho abbastanza contesto operativo per rispondere con certezza. Posso verificare con un comando se la richiesta è misurabile.",
+        "I do not have enough verified operational context to answer that with confidence. I can verify it with a command if it is measurable.",
     ],
 }
 
@@ -405,9 +414,11 @@ def save_consolidated_memory(memory: dict[str, Any]) -> None:
 def make_runtime_state() -> dict[str, Any]:
     return {
         "hz": TICK_HZ,
+        "started_at": time.time(),
         "last_snapshot": None,
         "llm_last_success_at": None,
         "llm_last_failure_at": None,
+        "last_user_message_at": 0.0,
         "last_policy_hz": TICK_HZ,
         "actuation_last_signature": None,
         "actuation_last_dispatch_at": 0.0,
@@ -502,17 +513,39 @@ def _normalize_intent(user_text: str) -> str:
 _user_caps_count: int = len(_load_user_caps())
 
 # ── Volitional Soma Core ──────────────────────────────────────────────────────
+_relevance_filter = RelevanceFilter()
+_output_filter = OutputFilter(_relevance_filter)
+_answer_finalizer = AnswerFinalizer(_output_filter)
+_experience = ExperienceDistiller()
+_baseline_store = BodyBaselineStore()
+_growth_engine = GrowthEngine()
+_life_drive = LifeDrive()
+
 _soma_memory = SomaMemory()
 _goal_store = GoalStore()
-_reflection_engine = ReflectionEngine(_soma_memory, _goal_store)
-_soma_mind = SomaMind(_goal_store, _soma_memory, _reflection_engine)
+_autobiography: Autobiography | None = Autobiography() if _cfg_ref.autobiography_enabled else None
+_skill_router = SkillRouter(_autobiography)
+_reflection_engine = ReflectionEngine(
+    _soma_memory,
+    _goal_store,
+    autobiography=_autobiography,
+    baseline_store=_baseline_store,
+    experience=_experience,
+)
+_soma_mind = SomaMind(
+    _goal_store,
+    _soma_memory,
+    _reflection_engine,
+    autobiography=_autobiography,
+    growth_engine=_growth_engine,
+    life_drive=_life_drive,
+)
 
 # ── Autonomous executor (survival-policy-enforced shell + self-modify) ────────
 _AUTONOMY_UNLOCKED = os.getenv("SOMA_AUTONOMY_UNLOCKED", "0").strip().lower() not in {"0", "false", "no", "off"}
 _SHELL_ACTIVE = _AUTONOMY_UNLOCKED or os.getenv("SOMA_SHELL_EXEC", "0").strip().lower() not in {"0", "false", "no", "off"}
 _SELF_MOD_ACTIVE = _AUTONOMY_UNLOCKED or os.getenv("SOMA_SELF_MODIFY", "0").strip().lower() not in {"0", "false", "no", "off"}
 
-from soma_core.config import CFG as _cfg_ref  # noqa: E402 — already imported via soma_core
 _autonomous_exec: AutonomousShellExecutor | None = (
     AutonomousShellExecutor(
         _soma_mind._trace, _soma_memory,
@@ -532,10 +565,12 @@ _autonomous_self_mod: AutonomousSelfModifier | None = (
 
 # ── Phase 6: Journal, Autobiography, Routines, Nightly, Self-Improvement ─────
 _journal: JournalManager | None = None
-_autobiography: Autobiography | None = None
 _routine_runner: RoutineRunner | None = None
 _nightly_reflection: NightlyReflection | None = None
 _self_improvement: SelfImprovementWorkflow | None = None
+_mutation_sandbox: MutationSandbox | None = None
+_cpp_bridge: CppBridge | None = None
+_bios_loop: BiosLoop | None = None
 
 if _cfg_ref.journal_enabled:
     _journal = JournalManager(
@@ -545,7 +580,6 @@ if _cfg_ref.journal_enabled:
     _soma_mind._trace.set_journal(_journal)
 
 if _cfg_ref.autobiography_enabled:
-    _autobiography = Autobiography()
     # Wire autobiography into already-constructed modules
     if _autonomous_exec is not None:
         _autonomous_exec._autobiography = _autobiography
@@ -576,6 +610,51 @@ if _cfg_ref.self_improvement_enabled:
         executor=_autonomous_exec,
         trace=_soma_mind._trace,
         autobiography=_autobiography,
+    )
+
+if _cfg_ref.mutation_sandbox:
+    _mutation_sandbox = MutationSandbox(
+        repo_root=Path(__file__).parent,
+        mutation_root=_cfg_ref.mutation_root,
+        ws_port=_cfg_ref.mutation_sandbox_ws_port,
+        http_port=_cfg_ref.mutation_sandbox_http_port,
+    )
+
+if _cfg_ref.cpp_bridge:
+    _cpp_bridge = CppBridge(
+        enabled=_cfg_ref.cpp_bridge,
+        binary_path=_cfg_ref.cpp_binary,
+        auto_build=_cfg_ref.cpp_auto_build,
+        use_for_projection=_cfg_ref.cpp_use_for_projection,
+    )
+    if _cfg_ref.cpp_smoke_test_on_start:
+        try:
+            _cpp_bridge.smoke_test()
+        except Exception:
+            pass
+
+if _cfg_ref.bios_loop:
+    _bios_loop = BiosLoop(
+        enabled=_cfg_ref.bios_loop,
+        interval_sec=_cfg_ref.bios_interval_sec,
+        idle_only=_cfg_ref.bios_idle_only,
+        use_llm=_cfg_ref.bios_use_llm,
+        max_tasks_per_hour=_cfg_ref.bios_max_tasks_per_hour,
+        max_llm_calls_per_hour=_cfg_ref.bios_max_llm_calls_per_hour,
+        task_timeout_sec=_cfg_ref.bios_task_timeout_sec,
+        write_memory=_cfg_ref.bios_write_memory,
+        mutation_proposal_interval_sec=_cfg_ref.bios_mutation_proposal_interval_sec,
+        executor=_autonomous_exec,
+        trace=_soma_mind._trace,
+        journal=_journal,
+        autobiography=_autobiography,
+        experience=_experience,
+        baseline_store=_baseline_store,
+        growth_engine=_growth_engine,
+        life_drive=_life_drive,
+        mutation=_mutation_sandbox,
+        cpp_bridge=_cpp_bridge,
+        call_llm_raw=None,  # wired after call_llm_raw exists
     )
 
 
@@ -1724,7 +1803,12 @@ def dispatch_actuation(snapshot: dict[str, Any]) -> None:
 
 def build_llm_context(snapshot: dict[str, Any], user_text: str) -> dict[str, Any]:
     memory_context = build_memory_context(snapshot, user_text)
-    tel_relevant = _telemetry_relevant(user_text)
+    classification = _relevance_filter.classify_request(user_text)
+    request_class = classification.get("class")
+    tel_relevant = request_class in {"body_state", "feeling", "performance"}
+    body_abnormal = _relevance_filter.body_abnormal(snapshot)
+    lesson_context = _experience.lesson_context_for_llm(user_text)
+    autobio_context = _autobiography.get_identity_context_for_llm() if _autobiography is not None else {}
 
     if tel_relevant:
         body_state: Any = {
@@ -1749,8 +1833,7 @@ def build_llm_context(snapshot: dict[str, Any], user_text: str) -> dict[str, Any
         thermal_stress = derived.get("thermal_stress", 0.0)
         energy_stress = derived.get("energy_stress", 0.0)
         instability = derived.get("instability", 0.0)
-        abnormal = max(thermal_stress, energy_stress, instability) >= 0.7
-        if abnormal:
+        if body_abnormal:
             body_state = {
                 "note": "abnormal_state_detected",
                 "thermal_stress": round(thermal_stress, 3),
@@ -1799,6 +1882,13 @@ def build_llm_context(snapshot: dict[str, Any], user_text: str) -> dict[str, Any
             },
         },
         "memory": memory_context,
+        "lessons": lesson_context,
+        "autobiography": autobio_context,
+        "bios": snapshot.get("bios_status", {}),
+        "mutation": snapshot.get("mutation_status", {}),
+        "cpp_bridge": snapshot.get("cpp_bridge_status", {}),
+        "autobiography_quality": snapshot.get("autobiography_quality", {}),
+        "growth": snapshot.get("_growth", {}),
         "known_capabilities": {
             "user_learned": list(_load_user_caps().keys()),
             "hw_available": [f for f, v in _hw_discovery.get_caps().items() if v is True],
@@ -1866,6 +1956,11 @@ def build_fallback_reply(user_text: str, snapshot: dict[str, Any], plain_text: s
             "affect": snapshot["affect"],
             "actions": snapshot["actions"],
         }
+
+    mention_body, _reason = _relevance_filter.should_mention_body(user_text, snapshot)
+    if not mention_body:
+        template = random.choice(FALLBACK_RESPONSES["_default"])
+        return {"speech": template, "affect": snapshot["affect"], "actions": snapshot["actions"]}
 
     intent = detect_intent(user_text)
     template = random.choice(FALLBACK_RESPONSES.get(intent, FALLBACK_RESPONSES["_default"]))
@@ -1957,6 +2052,8 @@ def call_llm_raw(prompt: str, timeout_s: float = 15.0) -> str | None:
 # Wire call_llm_raw into nightly reflection now that it's defined
 if _nightly_reflection is not None:
     _nightly_reflection._call_llm_raw = call_llm_raw  # type: ignore[attr-defined]
+if _bios_loop is not None:
+    _bios_loop._call_llm_raw = call_llm_raw  # type: ignore[attr-defined]
 
 
 async def broadcast_ds_turn(
@@ -2073,6 +2170,19 @@ async def try_chat_capability(user_text: str) -> dict[str, Any] | None:
     Returns structured dict(cmd, stdout, stderr, ok, source) or None.
     Enabled when SOMA_CAPABILITY_LEARNING=1 or SOMA_SHELL_EXEC=1 or SOMA_AUTONOMY_UNLOCKED=1.
     """
+    shortcut = deterministic_shortcut(user_text)
+    if shortcut is not None:
+        cmd = shortcut["command"]
+        ok, stdout, stderr = await asyncio.to_thread(
+            _safe_shell_run, cmd, shortcut["reason"], shortcut.get("expected_effect", "")
+        )
+        return {
+            "cmd": cmd,
+            "stdout": stdout[:500],
+            "stderr": stderr[:200],
+            "ok": ok,
+            "source": shortcut.get("source", "deterministic_shortcut"),
+        }
     if not (CAPABILITY_LEARNING_ENABLED or _SHELL_ACTIVE):
         return None
     global _user_caps_count
@@ -2111,7 +2221,7 @@ async def try_chat_capability(user_text: str) -> dict[str, Any] | None:
     if not llm_runtime_available():
         return None
 
-    planner_prompt = _PLANNER_PROMPT_TEMPLATE.format(user_text=user_text[:300])
+    planner_prompt_text = planner_prompt(user_text)
     if _soma_mind is not None:
         _soma_mind._trace.emit(
             "command_planner_request",
@@ -2123,7 +2233,7 @@ async def try_chat_capability(user_text: str) -> dict[str, Any] | None:
 
     try:
         async with _get_llm_raw_lock():
-            raw_reply = await asyncio.to_thread(call_llm_raw, planner_prompt, 15.0)
+            raw_reply = await asyncio.to_thread(call_llm_raw, planner_prompt_text, 15.0)
     except Exception as exc:
         if _soma_mind is not None:
             _soma_mind._trace.emit("warning", f"Command planner LLM call failed: {exc}", level="warning")
@@ -2200,7 +2310,7 @@ def call_llm(user_text: str, snapshot: dict[str, Any]) -> dict[str, Any] | None:
 
     started = time.perf_counter()
     context = build_llm_context(snapshot, user_text)
-    tel_relevant = _telemetry_relevant(user_text)
+    tel_relevant = _relevance_filter.telemetry_relevant(user_text, snapshot=snapshot)
 
     if tel_relevant:
         framing = (
@@ -2315,6 +2425,45 @@ def build_snapshot() -> dict[str, Any]:
         "provider_ms": round(provider_ms, 3),
         "projector_ms": tensor["projector_ms"],
     }
+    snapshot["sample_minutes"] = round((time.time() - float(runtime.get("started_at", time.time()))) / 60.0, 3)
+    baseline_update = _baseline_store.update_from_snapshot(snapshot)
+    snapshot["baseline_update"] = baseline_update
+    snapshot["baselines"] = _baseline_store.summary()
+    if _autobiography is not None:
+        try:
+            if baseline_update.get("stable_now"):
+                _autobiography.write_meaningful_event({
+                    "kind": "baseline",
+                    "title": "Body baseline established",
+                    "summary": f"Stable baselines: {', '.join(baseline_update['stable_now'])}.",
+                    "impact": "medium",
+                    "timestamp": snapshot["timestamp"],
+                })
+            elif baseline_update.get("material_changes"):
+                _autobiography.write_meaningful_event({
+                    "kind": "body_learning",
+                    "title": "Baseline materially changed",
+                    "summary": f"Material baseline changes: {', '.join(baseline_update['material_changes'])}.",
+                    "impact": "medium",
+                    "timestamp": snapshot["timestamp"],
+                })
+        except Exception:
+            pass
+    snapshot["command_agency"] = _soma_memory.get_growth().get("command_agency", {})
+    snapshot["autobiography_quality"] = _autobiography.get_quality_summary() if _autobiography is not None else {
+        "stage": "autobiographical_baseline",
+        "lessons_count": 0,
+        "meaningful_reflections": 0,
+        "empty_reflections": 0,
+        "duplicate_reflections": 0,
+        "last_lesson": "",
+        "last_operator_correction": "",
+        "last_nightly_reflection": "",
+        "shallow": True,
+    }
+    snapshot["cpp_bridge_status"] = _cpp_bridge.status() if _cpp_bridge is not None else {"enabled": False, "status": "missing"}
+    snapshot["mutation_status"] = _mutation_sandbox.status() if _mutation_sandbox is not None else {"enabled": False, "recommendation": ""}
+    snapshot["bios_status"] = _bios_loop.status() if _bios_loop is not None else {"enabled": False}
     snapshot["summary"] = build_summary(snapshot)
     snapshot["policy"] = build_policy_state(snapshot)
     apply_autonomic_rate(snapshot["policy"])
@@ -2328,6 +2477,7 @@ def build_snapshot() -> dict[str, Any]:
     snapshot["_drives"] = _d
     snapshot["_growth"] = mind_state.get("growth", {})
     snapshot["_trace"] = mind_state.get("trace", [])
+    snapshot["life_drive"] = mind_state.get("life_drive", {})
     runtime["last_snapshot"] = snapshot
     remember_somatic_trace(snapshot)
     consolidate_memory(snapshot)
@@ -2353,6 +2503,16 @@ def build_snapshot() -> dict[str, Any]:
     if _journal is not None and (runtime.get("_tick_count", 0) % 600 == 0):
         try:
             _journal.rotate_if_needed()
+        except Exception:
+            pass
+
+    if _bios_loop is not None:
+        try:
+            _bios_loop.maybe_run(
+                snapshot,
+                last_user_interaction_at=float(runtime.get("last_user_message_at", 0.0)),
+            )
+            snapshot["bios_status"] = _bios_loop.status()
         except Exception:
             pass
 
@@ -2410,6 +2570,14 @@ def _journal_status() -> dict[str, Any]:
             status["journal_large"] = total > 50 * 1024 * 1024
         except Exception:
             pass
+    if _nightly_reflection is not None:
+        try:
+            status["last_nightly_reflection"] = (
+                _autobiography.get_quality_summary().get("last_nightly_reflection", "")
+                if _autobiography is not None else ""
+            )
+        except Exception:
+            pass
     return status
 
 
@@ -2446,6 +2614,12 @@ def public_payload(snapshot: dict[str, Any], *, llm_override: dict[str, Any] | N
         "mind": snapshot.get("mind", {}),
         "drives": snapshot.get("_drives", {}),
         "growth": snapshot.get("_growth", {}),
+        "bios": snapshot.get("bios_status", {}),
+        "mutation": snapshot.get("mutation_status", {}),
+        "cpp_bridge": snapshot.get("cpp_bridge_status", {}),
+        "autobiography": snapshot.get("autobiography_quality", {}),
+        "life_drive": snapshot.get("life_drive", {}),
+        "baselines": snapshot.get("baselines", {}),
         "trace": snapshot.get("_trace", []),
         "capabilities": {
             "autonomy_unlocked": _AUTONOMY_UNLOCKED,
@@ -2731,79 +2905,107 @@ async def handler(websocket: ServerConnection):
                     continue
 
                 snapshot = build_snapshot()
-                runtime["last_user_message_at"] = time.monotonic()
+                runtime["last_user_message_at"] = time.time()
                 if _routine_runner is not None:
                     _routine_runner.set_last_user_interaction(time.monotonic())
                 _soma_mind.on_user_message(user_text, snapshot)
                 remember_dialogue_turn("user", user_text, snapshot)
                 llm_meta_override = build_llm_status(snapshot)
+                operator_lessons = _experience.distill_from_operator_correction(user_text)
+                skill_result = _skill_router.execute(user_text, {"snapshot": snapshot, "growth": snapshot.get("_growth", {})})
+                if operator_lessons:
+                    _experience.save_lessons(operator_lessons)
+                    if _autobiography is not None:
+                        for lesson in operator_lessons:
+                            _autobiography.write_meaningful_event({
+                                "kind": "operator_correction",
+                                "title": "Persistent operator correction",
+                                "summary": str(lesson.get("observation") or user_text)[:280],
+                                "behavioral_update": str(lesson.get("behavioral_update") or "")[:280],
+                                "evidence": lesson.get("evidence", []),
+                                "impact": "high",
+                                "confidence": float(lesson.get("confidence", 0.9)),
+                            })
+                    skill_result = {
+                        "ok": True,
+                        "skill_id": "memory.operator_correction",
+                        "text": "Correzione recepita. D'ora in poi terrò la telemetria corporea interna nelle risposte tecniche, salvo richiesta esplicita o stato anomalo.",
+                        "source": "builtin",
+                    }
 
-                # Try to answer via real bash command before calling the entity persona LLM
-                cap_result = await try_chat_capability(user_text)
-                enriched_text = user_text
-                if cap_result and cap_result.get("ok"):
-                    enriched_text = (
-                        f"{user_text}\n\n[SHELL_RESULT]\n"
-                        f"Command: `{cap_result['cmd']}`\n"
-                        f"Output:\n{cap_result['stdout'].strip()[:400]}\n[/SHELL_RESULT]\n"
-                        "Use the exact output above in your reply. Include the command you ran."
-                    )
-                    _soma_mind._trace.emit(
-                        "command_result_used_in_chat",
-                        f"Shell result injected into chat context for: {user_text[:80]}",
-                        inputs={"user_text": user_text[:200], "cmd": cap_result["cmd"][:200]},
-                        outputs={"stdout_chars": len(cap_result["stdout"]), "ok": True},
-                        level="info",
-                    )
-                elif cap_result and not cap_result.get("ok"):
-                    enriched_text = (
-                        f"{user_text}\n\n[SHELL_RESULT]\n"
-                        f"Command: `{cap_result['cmd']}`\n"
-                        f"Status: FAILED\nError: {cap_result.get('stderr', '')[:200]}\n[/SHELL_RESULT]\n"
-                        "The command failed. Acknowledge this honestly in your reply."
-                    )
-                    _soma_mind._trace.emit(
-                        "command_result_used_in_chat",
-                        f"Shell result (FAILED) injected into chat context for: {user_text[:80]}",
-                        inputs={"user_text": user_text[:200], "cmd": cap_result["cmd"][:200]},
-                        outputs={"ok": False, "stderr": cap_result.get("stderr", "")[:200]},
-                        level="warning",
-                    )
-
-                # Broadcast what the entity is sending to its language core
+                cap_result = None if (skill_result and skill_result.get("ok")) else await try_chat_capability(user_text)
+                llm_reply = None
                 ds_entity_text = f"[CHAT] {user_text[:300]}"
-                if cap_result:
+                if skill_result and skill_result.get("ok"):
+                    ds_entity_text += f"\n→ skill result: {str(skill_result.get('text') or '')[:120]}"
+                elif cap_result:
                     status = "ok" if cap_result.get("ok") else "failed"
                     ds_entity_text += f"\n→ shell result ({status}): {cap_result.get('stdout', cap_result.get('stderr', ''))[:100]}"
                 await broadcast_ds_turn("entity", ds_entity_text, "chat")
 
-                try:
-                    llm_reply = await asyncio.to_thread(call_llm, enriched_text, snapshot)
-                except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError) as exc:
-                    runtime["llm_last_failure_at"] = time.monotonic()
-                    print(f"[LLM] Request failed: {exc}")
-                    llm_reply = None
+                if not ((skill_result and skill_result.get("ok")) or (cap_result and cap_result.get("ok"))):
+                    enriched_text = user_text
+                    if cap_result and not cap_result.get("ok"):
+                        enriched_text = (
+                            f"{user_text}\n\n[SHELL_RESULT]\n"
+                            f"Command: `{cap_result['cmd']}`\n"
+                            f"Status: FAILED\nError: {cap_result.get('stderr', '')[:200]}\n[/SHELL_RESULT]\n"
+                            "The command failed. Acknowledge this honestly in your reply."
+                        )
+                        _soma_mind._trace.emit(
+                            "command_result_used_in_chat",
+                            f"Shell result (FAILED) injected into chat context for: {user_text[:80]}",
+                            inputs={"user_text": user_text[:200], "cmd": cap_result["cmd"][:200]},
+                            outputs={"ok": False, "stderr": cap_result.get("stderr", "")[:200]},
+                            level="warning",
+                        )
+                    try:
+                        llm_reply = await asyncio.to_thread(call_llm, enriched_text, snapshot)
+                    except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError) as exc:
+                        runtime["llm_last_failure_at"] = time.monotonic()
+                        print(f"[LLM] Request failed: {exc}")
+                        llm_reply = None
 
                 if llm_reply is None:
                     llm_reply = build_fallback_reply(user_text, snapshot)
                 if "llm" in llm_reply:
                     llm_meta_override = llm_reply["llm"]
 
-                # Broadcast what DeepSeek replied
+                if cap_result is not None:
+                    _soma_memory.record_command_result(
+                        command_category(str(cap_result.get("cmd") or "")),
+                        bool(cap_result.get("ok")),
+                        str(cap_result.get("cmd") or ""),
+                        source=str(cap_result.get("source") or "shell"),
+                        regression_ok=bool(cap_result.get("ok")),
+                    )
+                    if cap_result.get("ok"):
+                        command_lessons = _experience.distill_from_command(user_text, cap_result)
+                        _experience.save_lessons(command_lessons)
+
+                final_text = _answer_finalizer.finalize(
+                    user_text,
+                    snapshot,
+                    command_result=cap_result,
+                    skill_result=skill_result,
+                    llm_text=llm_reply.get("speech") if isinstance(llm_reply, dict) else None,
+                )
+                llm_reply["speech"] = final_text
+
                 await broadcast_ds_turn("deepseek", llm_reply.get("speech", "")[:400], "chat")
-                remember_dialogue_turn("assistant", llm_reply["speech"], snapshot)
+                remember_dialogue_turn("assistant", final_text, snapshot)
                 remember_episode(
                     "chat",
                     snapshot,
                     user_text=user_text,
-                    reply_text=llm_reply["speech"],
+                    reply_text=final_text,
                 )
 
                 await websocket.send(
                     safe_json_dumps(
                         {
                             "type": "chat_reply",
-                            "text": llm_reply["speech"],
+                            "text": final_text,
                             "affect": llm_reply["affect"],
                             "actions": llm_reply["actions"],
                             **public_payload(snapshot, llm_override=llm_meta_override),

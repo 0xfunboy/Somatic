@@ -35,6 +35,7 @@ _IMPORTANT_PHASES: frozenset[str] = frozenset({
     "reflection", "memory_update", "growth", "warning", "llm", "fallback",
     "policy", "command_planner_request", "command_planner_response",
     "command_result_used_in_chat",
+    "bios_task_started", "bios_task_completed", "bios_task_failed", "bios_task_skipped",
 })
 
 # High-frequency phases that should NOT be persisted in "important" mode
@@ -65,6 +66,7 @@ class CognitiveTrace:
         "self_modify_reverted", "skill_learned",
         # command planner phases
         "command_planner_request", "command_planner_response", "command_result_used_in_chat",
+        "bios_task_started", "bios_task_completed", "bios_task_failed", "bios_task_skipped",
     })
 
     def __init__(self, journal: Any = None) -> None:

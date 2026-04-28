@@ -14,8 +14,7 @@ mkdir -p "$LOGS"
 echo "[SOMA] root: $ROOT"
 
 if [ ! -f "$ENV_FILE" ]; then
-  echo "[SOMA] ERROR: missing .env at $ENV_FILE"
-  exit 1
+  echo "[SOMA] WARN: missing .env at $ENV_FILE, using current environment only"
 fi
 
 echo "[SOMA] stopping old instances..."
@@ -28,9 +27,11 @@ cd "$ROOT"
 
 nohup bash -lc "
   cd '$ROOT'
-  set -a
-  source '$ENV_FILE'
-  set +a
+  if [ -f '$ENV_FILE' ]; then
+    set -a
+    source '$ENV_FILE'
+    set +a
+  fi
   python3 server.py
 " > "$LOGS/soma-ws.log" 2>&1 &
 

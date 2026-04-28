@@ -1,190 +1,169 @@
 """
-soma_core/reflection.py — ReflectionEngine: analytical + optional LLM-based self-reflection.
-
-Analytical reflection runs every N ticks at zero LLM cost:
-  - detects new CPU/thermal baselines from recent sensor history
-  - records learned facts (sensor ranges, policy transitions)
-  - updates goal evidence based on observable progress
-
-LLM-assisted reflection is triggered on significant events (new scenario,
-drive spike, milestone) and requires a callable async llm_fn to be injected.
+soma_core/reflection.py — Reflection engine with measurable quality.
 """
 
 from __future__ import annotations
 
+import hashlib
+import json
 import time
 from collections import deque
 from typing import TYPE_CHECKING, Any, Callable, Coroutine
 
 if TYPE_CHECKING:
-    pass  # Autobiography imported at runtime only
+    pass
 
 from soma_core.memory import SomaMemory
 from soma_core.goals import GoalStore
 
+_REFLECTION_MIN_INTERVAL = 60
 
-_BASELINE_WINDOW = 120        # samples to average for a stable baseline
-_BASELINE_MIN_SAMPLES = 30    # minimum before we commit a baseline
-_REFLECTION_MIN_INTERVAL = 60  # seconds between analytical reflections
+
+def _signature(snapshot: dict[str, Any]) -> str:
+    system = snapshot.get("system", {})
+    derived = snapshot.get("derived", {})
+    payload = {
+        "scenario": snapshot.get("scenario"),
+        "cpu": round(float(system.get("cpu_percent") or 0.0), 1),
+        "mem": round(float(system.get("memory_percent") or 0.0), 1),
+        "cpu_temp": round(float(system.get("cpu_temp") or 0.0), 1),
+        "thermal": round(float(derived.get("thermal_stress") or 0.0), 2),
+        "energy": round(float(derived.get("energy_stress") or 0.0), 2),
+        "instability": round(float(derived.get("instability") or 0.0), 2),
+    }
+    return hashlib.sha1(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()[:16]
 
 
 class ReflectionEngine:
-    """
-    Produces ReflectionEntry dicts; caller decides how to broadcast/store them.
-
-    Usage:
-        engine = ReflectionEngine(memory, goal_store)
-        entry = engine.maybe_reflect(snapshot)   # returns dict or None
-    """
-
     def __init__(
         self,
         memory: SomaMemory,
         goal_store: GoalStore,
         llm_fn: Callable[[str], Coroutine[Any, Any, str | None]] | None = None,
         autobiography: Any | None = None,
+        baseline_store: Any | None = None,
+        experience: Any | None = None,
     ) -> None:
         self._mem = memory
         self._goals = goal_store
         self._llm_fn = llm_fn
         self._autobiography = autobiography
+        self._baseline_store = baseline_store
+        self._experience = experience
         self._last_reflect_at: float = 0.0
-        self._cpu_window: deque[float] = deque(maxlen=_BASELINE_WINDOW)
-        self._temp_si_window: deque[float] = deque(maxlen=_BASELINE_WINDOW)
-        self._last_scenario: str = ""
-        self._scenario_streak: int = 0
-
-    # ── public API ───────────────────────────────────────────────────────────
+        self._last_signature: str = ""
+        self._history: deque[str] = deque(maxlen=20)
 
     def ingest(self, snapshot: dict[str, Any]) -> None:
-        """Feed every tick; accumulates sensor history."""
-        cpu = snapshot["system"].get("cpu_percent")
-        temp = snapshot["sensors"].get("temp_si")
-        if isinstance(cpu, (int, float)) and cpu == cpu:  # not NaN
-            self._cpu_window.append(float(cpu))
-        if isinstance(temp, (int, float)) and temp == temp:
-            self._temp_si_window.append(float(temp))
-
-        scenario = snapshot.get("scenario", "")
-        if scenario == self._last_scenario:
-            self._scenario_streak += 1
-        else:
-            self._last_scenario = scenario
-            self._scenario_streak = 1
+        self._history.append(_signature(snapshot))
 
     def maybe_reflect(self, snapshot: dict[str, Any]) -> dict[str, Any] | None:
-        """
-        Run analytical reflection if enough time has passed.
-        Returns a ReflectionEntry dict on success, None if skipped.
-        """
         now = time.time()
         if now - self._last_reflect_at < _REFLECTION_MIN_INTERVAL:
             return None
         self._last_reflect_at = now
 
+        sig = _signature(snapshot)
+        duplicate = sig == self._last_signature
+        self._last_signature = sig
+
+        baseline_updates = {}
+        if self._baseline_store is not None:
+            baseline_updates = snapshot.get("baseline_update", {}) or {}
+        lessons: list[dict[str, Any] | str] = []
         learned: list[str] = []
-        goal_updates: list[dict[str, Any]] = []
-        self_model_updates: dict[str, Any] = {}
+        behavioral_updates: list[str] = []
+        no_lesson_reason = ""
 
-        # --- baseline learning ---
-        cpu_baseline = self._learn_baseline("cpu_percent_baseline", self._cpu_window)
-        if cpu_baseline is not None:
-            self_model_updates["cpu_percent_baseline"] = cpu_baseline
-            learned.append(f"CPU baseline stabilised at {cpu_baseline:.1f}%")
+        if duplicate:
+            no_lesson_reason = "duplicate"
+        elif baseline_updates.get("stable_now"):
+            for key in baseline_updates["stable_now"]:
+                learned.append(f"Baseline stabilized for {key}")
+                lessons.append({
+                    "id": f"baseline.{key}",
+                    "kind": "lesson",
+                    "observation": f"Baseline stabilized for {key}.",
+                    "evidence": [{"source": "baseline_store", "value": key}],
+                    "interpretation": "This body metric is now stable enough to guide later anomaly detection.",
+                    "behavioral_update": f"Use {key} as a stable baseline during future body-state evaluations.",
+                    "confidence": 0.8,
+                })
+        else:
+            derived = snapshot.get("derived", {})
+            if max(
+                float(derived.get("thermal_stress", 0.0)),
+                float(derived.get("energy_stress", 0.0)),
+                float(derived.get("instability", 0.0)),
+            ) >= 0.7:
+                learned.append("Body abnormality detected")
+                lessons.append({
+                    "id": "limitation.abnormal_body_priority",
+                    "kind": "limitation",
+                    "observation": "Abnormal body state should suppress speculative language.",
+                    "evidence": [{"source": "snapshot", "value": snapshot.get("scenario", "unknown")}],
+                    "interpretation": "High stress states require direct, safety-oriented responses.",
+                    "behavioral_update": "Prefer concise operational responses and stabilization-first behavior during abnormal states.",
+                    "confidence": 0.78,
+                })
+            else:
+                no_lesson_reason = "state unchanged / insufficient evidence"
 
-        temp_baseline = self._learn_baseline("cpu_temp_baseline", self._temp_si_window)
-        if temp_baseline is not None:
-            self_model_updates["cpu_temp_baseline"] = temp_baseline
-            learned.append(f"CPU temp baseline stabilised at {temp_baseline:.1f}°C")
-
-        # --- goal progress evidence ---
-        affect = snapshot.get("affect", {})
-        homeostasis = snapshot.get("homeostasis", {})
-        stability_margin = homeostasis.get("stability_margin", 1.0)
-        thermal_margin = homeostasis.get("thermal_margin", 1.0)
-
-        if stability_margin > 0.85 and thermal_margin > 0.85:
-            self._goals.add_evidence(
-                "maintain_stability",
-                f"Stability margin {stability_margin:.2f}, thermal margin {thermal_margin:.2f}",
-                progress_delta=0.01,
-            )
-            goal_updates.append({"id": "maintain_stability", "delta": 0.01})
-
-        if cpu_baseline is not None or temp_baseline is not None:
-            self._goals.add_evidence(
-                "understand_own_body",
-                f"New sensor baseline computed: {list(self_model_updates.keys())}",
-                progress_delta=0.05,
-            )
-            goal_updates.append({"id": "understand_own_body", "delta": 0.05})
-
-        # --- persist updates ---
-        for key, value in self_model_updates.items():
-            self._mem.update_body_baseline(key, value)
-        for fact in learned:
-            self._mem.record_learned_fact(fact)
+        meaningful = bool(lessons or baseline_updates.get("material_changes"))
+        confidence = 0.15 if not meaningful else min(0.95, 0.55 + (0.1 * len(lessons)))
+        summary = self._make_summary(snapshot, learned, no_lesson_reason)
 
         total_reflections = self._mem.increment_reflections()
+        if meaningful:
+            for item in learned:
+                self._mem.record_learned_fact(item)
+        quality = self._mem.update_reflection_quality(
+            meaningful=meaningful,
+            duplicate=duplicate,
+            lessons_learned=len(lessons),
+        )
 
         entry: dict[str, Any] = {
             "timestamp": now,
             "kind": "analytical_reflection",
-            "trigger": self._determine_trigger(snapshot),
-            "summary": self._make_summary(learned, snapshot),
+            "trigger": snapshot.get("scenario", "periodic"),
+            "summary": summary,
             "learned": learned,
-            "goal_updates": goal_updates,
-            "self_model_updates": self_model_updates,
+            "lessons": lessons,
+            "no_lesson_reason": no_lesson_reason,
+            "baseline_updates": baseline_updates,
+            "behavioral_updates": behavioral_updates,
+            "confidence": round(confidence, 4),
+            "meaningful": meaningful,
+            "duplicate": duplicate,
             "total_reflections": total_reflections,
+            "reflection_quality": quality,
+            "self_model_updates": baseline_updates.get("summary", {}),
         }
         self._mem.append_reflection(entry)
 
-        # Write autobiography event if learning was meaningful
-        if learned and self._autobiography is not None:
-            try:
-                self._autobiography.write_event({
-                    "kind": "reflection",
-                    "title": entry["summary"][:80],
-                    "summary": entry["summary"],
-                    "evidence": learned[:3],
-                    "impact": "medium" if len(learned) >= 2 else "low",
-                    "related_goal": "understand_own_body",
-                    "emotional_tone": "curious",
-                    "body_context": {
-                        "trigger": entry["trigger"],
-                        "total_reflections": total_reflections,
-                    },
-                })
-            except Exception:
-                pass
+        if self._experience is not None:
+            distilled = self._experience.distill_from_reflection(entry, snapshot)
+            if distilled:
+                self._experience.save_lessons(distilled)
 
+        if meaningful and self._autobiography is not None:
+            self._autobiography.write_meaningful_event({
+                "kind": "reflection",
+                "title": "Meaningful reflection",
+                "summary": summary,
+                "evidence": learned or [no_lesson_reason],
+                "impact": "medium" if lessons else "low",
+                "confidence": confidence,
+                "behavioral_update": lessons[0]["behavioral_update"] if lessons and isinstance(lessons[0], dict) else "",
+                "timestamp": now,
+            })
         return entry
 
-    # ── helpers ──────────────────────────────────────────────────────────────
-
-    def _learn_baseline(self, key: str, window: deque[float]) -> float | None:
-        if len(window) < _BASELINE_MIN_SAMPLES:
-            return None
-        body = self._mem.get_body()
-        existing = body.get(key)
-        mean = sum(window) / len(window)
-        if existing is None or abs(mean - existing) > 2.0:
-            return round(mean, 2)
-        return None
-
-    def _determine_trigger(self, snapshot: dict[str, Any]) -> str:
+    def _make_summary(self, snapshot: dict[str, Any], learned: list[str], no_lesson_reason: str) -> str:
+        if learned:
+            return "Learned: " + "; ".join(learned[:3]) + "."
         scenario = snapshot.get("scenario", "nominal")
-        if self._scenario_streak <= 5:
-            return f"scenario_change:{scenario}"
-        dominant = snapshot.get("homeostasis", {}).get("dominant", [])
-        if dominant:
-            return f"drive_dominant:{dominant[0].get('name', 'unknown')}"
-        return "periodic"
-
-    def _make_summary(self, learned: list[str], snapshot: dict[str, Any]) -> str:
-        if not learned:
-            scenario = snapshot.get("scenario", "nominal")
-            cpu = snapshot["system"].get("cpu_percent")
-            cpu_str = f"{cpu:.0f}%" if isinstance(cpu, (int, float)) else "--"
-            return f"Periodic reflection — scenario: {scenario}, CPU: {cpu_str}. No new baselines."
-        return "Learned: " + "; ".join(learned[:3]) + "."
+        cpu = snapshot.get("system", {}).get("cpu_percent")
+        cpu_str = f"{float(cpu):.0f}%" if isinstance(cpu, (int, float)) else "--"
+        return f"Reflection on {scenario}: CPU {cpu_str}. No lesson distilled ({no_lesson_reason or 'none'})."

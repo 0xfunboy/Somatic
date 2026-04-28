@@ -26,6 +26,7 @@ _IMPORTANT_PHASES = frozenset({
     "reflection", "memory_update", "growth", "warning", "llm", "fallback",
     "policy", "command_planner_request", "command_planner_response",
     "command_result_used_in_chat",
+    "bios_task_started", "bios_task_completed", "bios_task_failed", "bios_task_skipped",
 })
 
 _NOISY_PHASES = frozenset({

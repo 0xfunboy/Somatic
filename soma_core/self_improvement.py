@@ -78,6 +78,19 @@ _FORBIDDEN = (
 _VALIDATION_COMMANDS: list[tuple[str, bool]] = [
     # (command, always_run)
     ("python3 -m py_compile server.py soma_core/*.py", True),
+    ("python3 scripts/test_answer_finalizer.py", False),
+    ("python3 scripts/test_relevance_filter.py", False),
+    ("python3 scripts/test_output_filter.py", False),
+    ("python3 scripts/test_experience_distiller.py", False),
+    ("python3 scripts/test_autobiography_quality.py", False),
+    ("python3 scripts/test_reflection_quality.py", False),
+    ("python3 scripts/test_growth_engine.py", False),
+    ("python3 scripts/test_baselines.py", False),
+    ("python3 scripts/test_bios_loop.py", False),
+    ("python3 scripts/test_mutation_sandbox.py", False),
+    ("python3 scripts/test_cpp_bridge.py", False),
+    ("python3 scripts/test_life_drive.py", False),
+    ("python3 scripts/test_phase8_regressions.py", False),
     ("python3 scripts/test_command_planner.py", True),
     ("python3 scripts/test_telemetry_relevance.py", True),
     ("python3 scripts/test_journal_compaction.py", False),   # run only if file exists

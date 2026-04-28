@@ -24,6 +24,7 @@ if TYPE_CHECKING:
     from soma_core.memory import SomaMemory
 
 _REPO_ROOT = Path(__file__).parent.parent.resolve()
+_HOME = Path.home()
 
 # ── denylist ──────────────────────────────────────────────────────────────────
 
@@ -114,6 +115,44 @@ def _effective_tokens(stage: str) -> list[str]:
         else:
             break
     return tokens
+
+
+def _resolve_nvm_default_bin() -> str | None:
+    nvm_root = _HOME / ".nvm"
+    versions_dir = nvm_root / "versions" / "node"
+    if not versions_dir.exists():
+        return None
+
+    preferred_patterns: list[str] = []
+    alias_default = nvm_root / "alias" / "default"
+    try:
+        alias_value = alias_default.read_text(encoding="utf-8").strip()
+    except OSError:
+        alias_value = ""
+    if alias_value:
+        normalized = alias_value if alias_value.startswith("v") else f"v{alias_value}"
+        preferred_patterns.append(normalized)
+        preferred_patterns.append(f"{normalized}*")
+
+    candidates: list[Path] = []
+    for pattern in preferred_patterns:
+        candidates.extend(sorted(versions_dir.glob(pattern)))
+    if not candidates:
+        candidates = sorted(versions_dir.glob("v*"))
+    for candidate in candidates:
+        node_bin = candidate / "bin"
+        if (node_bin / "node").exists():
+            return str(node_bin)
+    return None
+
+
+def _execution_env() -> dict[str, str]:
+    env = {**os.environ, "LANG": "C", "LC_ALL": "C"}
+    nvm_bin = _resolve_nvm_default_bin()
+    if nvm_bin:
+        current_path = env.get("PATH", "")
+        env["PATH"] = f"{nvm_bin}:{current_path}" if current_path else nvm_bin
+    return env
 
 
 class CommandBlocked(Exception):
@@ -421,7 +460,7 @@ class AutonomousShellExecutor:
                 text=True,
                 timeout=self.timeout_s,
                 cwd=str(_REPO_ROOT),
-                env={**os.environ, "LANG": "C", "LC_ALL": "C"},
+                env=_execution_env(),
             )
             stdout = result.stdout.strip()[: self.max_output_chars]
             stderr = result.stderr.strip()[:1024]

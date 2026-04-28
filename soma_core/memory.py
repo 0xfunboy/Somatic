@@ -58,10 +58,26 @@ class SomaMemory:
     def get_growth(self) -> dict[str, Any]:
         return _load_json(_SELF_MODEL_FILE, {}).get("growth", {})
 
+    def set_growth(self, growth: dict[str, Any]) -> None:
+        sm = _load_json(_SELF_MODEL_FILE, {"identity": {}, "known_body": {}, "preferences": {}, "growth": {}, "updated_at": 0.0})
+        sm["growth"] = growth
+        sm["updated_at"] = time.time()
+        _save_json(_SELF_MODEL_FILE, sm)
+
     def increment_reflections(self) -> int:
         sm = _load_json(_SELF_MODEL_FILE, {"identity": {}, "known_body": {}, "preferences": {}, "growth": {}, "updated_at": 0.0})
         sm.setdefault("growth", {})
         sm["growth"]["total_reflections"] = int(sm["growth"].get("total_reflections", 0)) + 1
+        sm["growth"].setdefault("reflection_quality", {
+            "total_reflections": 0,
+            "meaningful_reflections": 0,
+            "empty_reflections": 0,
+            "duplicate_reflections": 0,
+            "lessons_learned": 0,
+        })
+        sm["growth"]["reflection_quality"]["total_reflections"] = int(
+            sm["growth"]["reflection_quality"].get("total_reflections", 0)
+        ) + 1
         sm["updated_at"] = time.time()
         _save_json(_SELF_MODEL_FILE, sm)
         return sm["growth"]["total_reflections"]
@@ -86,6 +102,68 @@ class SomaMemory:
         sm["known_body"][key] = round(value, 3)
         sm["updated_at"] = time.time()
         _save_json(_SELF_MODEL_FILE, sm)
+
+    def update_reflection_quality(
+        self,
+        *,
+        meaningful: bool,
+        duplicate: bool = False,
+        lessons_learned: int = 0,
+    ) -> dict[str, Any]:
+        sm = _load_json(_SELF_MODEL_FILE, {"identity": {}, "known_body": {}, "preferences": {}, "growth": {}, "updated_at": 0.0})
+        growth = sm.setdefault("growth", {})
+        quality = growth.setdefault("reflection_quality", {
+            "total_reflections": 0,
+            "meaningful_reflections": 0,
+            "empty_reflections": 0,
+            "duplicate_reflections": 0,
+            "lessons_learned": 0,
+        })
+        if meaningful:
+            quality["meaningful_reflections"] = int(quality.get("meaningful_reflections", 0)) + 1
+        else:
+            quality["empty_reflections"] = int(quality.get("empty_reflections", 0)) + 1
+        if duplicate:
+            quality["duplicate_reflections"] = int(quality.get("duplicate_reflections", 0)) + 1
+        if lessons_learned:
+            quality["lessons_learned"] = int(quality.get("lessons_learned", 0)) + int(lessons_learned)
+        growth["reflection_quality"] = quality
+        sm["updated_at"] = time.time()
+        _save_json(_SELF_MODEL_FILE, sm)
+        return quality
+
+    def record_command_result(self, category: str, ok: bool, command: str, *, source: str = "shell", regression_ok: bool | None = None) -> dict[str, Any]:
+        sm = _load_json(_SELF_MODEL_FILE, {"identity": {}, "known_body": {}, "preferences": {}, "growth": {}, "updated_at": 0.0})
+        growth = sm.setdefault("growth", {})
+        agency = growth.setdefault("command_agency", {
+            "successful": 0,
+            "failed": 0,
+            "categories": [],
+            "recent_commands": [],
+            "regression_ok": False,
+        })
+        if ok:
+            agency["successful"] = int(agency.get("successful", 0)) + 1
+            categories = set(agency.get("categories", []))
+            categories.add(category)
+            agency["categories"] = sorted(categories)
+        else:
+            agency["failed"] = int(agency.get("failed", 0)) + 1
+        recent = agency.get("recent_commands", [])
+        recent.append({
+            "command": command[:160],
+            "category": category,
+            "ok": bool(ok),
+            "source": source,
+            "at": time.time(),
+        })
+        agency["recent_commands"] = recent[-30:]
+        if regression_ok is not None:
+            agency["regression_ok"] = bool(regression_ok)
+        growth["command_agency"] = agency
+        sm["updated_at"] = time.time()
+        _save_json(_SELF_MODEL_FILE, sm)
+        return agency
 
     def set_body_field(self, key: str, value: Any) -> None:
         sm = _load_json(_SELF_MODEL_FILE, {"identity": {}, "known_body": {}, "preferences": {}, "growth": {}, "updated_at": 0.0})
