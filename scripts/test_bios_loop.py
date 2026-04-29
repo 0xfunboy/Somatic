@@ -144,9 +144,14 @@ def main() -> int:
             data_root=Path(td),
         )
         result = bios.run_once({"_growth": {"missing_requirements": ["three_categories"], "stage": "verified_command_agency"}, "derived": {}, "system": {}, "provider": {}})
+        state = json.loads((Path(td) / "bios_state.json").read_text(encoding="utf-8"))
         failures += check("grow mode uses internal loop", internal.called == ["grow"], str(internal.called))
         failures += check("internal evidence captured", result["result"]["evidence"]["ok"] is True, str(result))
-        failures += check("bios state stores internal prompt", json.loads((Path(td) / "bios_state.json").read_text(encoding="utf-8")).get("last_internal_prompt") == "growth prompt")
+        failures += check(
+            "bios state stores compact internal prompt",
+            state.get("last_internal_prompt", {}).get("preview") == "growth prompt" and bool(state.get("last_internal_prompt", {}).get("archive_path")),
+            str(state.get("last_internal_prompt")),
+        )
 
     with tempfile.TemporaryDirectory() as td:
         exe = DummyExecutor()
@@ -164,7 +169,11 @@ def main() -> int:
         result = bios.run_once({"_growth": {"missing_requirements": [], "stage": "metabolic_growth_ready"}, "derived": {}, "system": {}, "provider": {}})
         state = json.loads((Path(td) / "bios_state.json").read_text(encoding="utf-8"))
         failures += check("stabilize mode still uses internal loop", internal.called == ["stabilize"], str(internal.called))
-        failures += check("stabilize mode stores stabilization prompt", state.get("last_internal_prompt") == "stabilization prompt", str(state))
+        failures += check(
+            "stabilize mode stores compact stabilization prompt",
+            state.get("last_internal_prompt", {}).get("preview") == "stabilization prompt" and bool(state.get("last_internal_prompt", {}).get("archive_path")),
+            str(state),
+        )
         failures += check("stabilize result preserves evidence", result["result"]["evidence"].get("mode") == "stabilize", str(result))
 
     with tempfile.TemporaryDirectory() as td:
@@ -241,7 +250,11 @@ def main() -> int:
         internal_state = json.loads((mind_root / "internal_loop_state.json").read_text(encoding="utf-8"))
         bios_state = json.loads((mind_root / "bios_state.json").read_text(encoding="utf-8"))
         failures += check("partial linux telemetry can leave permanent stabilize", rich_snapshot["metabolic"]["mode"] in {"observe", "grow"}, str(rich_snapshot["metabolic"]))
-        failures += check("bios live integration writes internal prompt", bool(internal_state.get("last_prompt")), str(internal_state))
+        failures += check(
+            "bios live integration writes compact internal prompt",
+            bool((internal_state.get("last_prompt") or {}).get("archive_path")),
+            str(internal_state),
+        )
         failures += check("bios live integration stores fallback decision", bool(internal_state.get("last_parsed") or internal_state.get("last_parsed_fallback")), str(internal_state))
         failures += check("bios live integration prompt introspection not empty", "No internal BIOS prompt" not in router.execute("show your last BIOS internal prompt")["text"], str(bios_state))
     return failures

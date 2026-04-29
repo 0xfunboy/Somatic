@@ -65,6 +65,9 @@ from soma_core.power_policy import PowerPolicy
 from soma_core.internal_loop import InternalLoop
 from soma_core.introspection import IntrospectionRouter
 from soma_core.test_runner import FrontendTestRunner
+from soma_core.profiler import OperationProfiler
+from soma_core.resource_governor import ResourceGovernor
+from soma_core.scheduler import BudgetedScheduler
 from soma_core.config import CFG as _cfg_ref
 
 WS_HOST = "0.0.0.0"
@@ -424,12 +427,49 @@ def make_runtime_state() -> dict[str, Any]:
         "ws_port": WS_PORT,
         "started_at": time.time(),
         "last_snapshot": None,
+        "last_full_payload_at": 0.0,
+        "last_light_payload_at": 0.0,
+        "force_full_payload": True,
+        "last_full_payload_signature": "",
+        "manual_hz_override": False,
         "llm_last_success_at": None,
         "llm_last_failure_at": None,
         "last_user_message_at": 0.0,
         "last_policy_hz": TICK_HZ,
+        "last_payload_throttle_reward_at": 0.0,
+        "last_growth_resource_reward_at": 0.0,
         "actuation_last_signature": None,
         "actuation_last_dispatch_at": 0.0,
+        "resource": {},
+        "performance": {},
+        "medium": {
+            "tensor": None,
+            "projector": None,
+            "projector_ms": 0.0,
+            "cpp_bridge_status": {"enabled": False, "status": "missing"},
+            "mutation_status": {"enabled": False, "recommendation": ""},
+            "reward": {},
+            "internal_loop": {"enabled": False},
+            "vector_state": {},
+            "metabolic": {},
+            "bios_status": {"enabled": False},
+            "mind": {},
+            "drives": {},
+            "growth": {},
+            "trace": [],
+            "life_drive": {},
+            "baselines": {},
+            "baseline_update": {},
+            "command_agency": {},
+            "autobiography_quality": {},
+            "projector_updated_at": 0.0,
+            "vector_updated_at": 0.0,
+            "cpp_updated_at": 0.0,
+            "metabolic_updated_at": 0.0,
+            "mind_updated_at": 0.0,
+            "baselines_updated_at": 0.0,
+            "bios_updated_at": 0.0,
+        },
         "autonomy": {
             "thermal_bucket": 0,
             "energy_bucket": 0,
@@ -533,6 +573,9 @@ _reward_engine = RewardEngine()
 _power_policy = PowerPolicy()
 _metabolic_engine = MetabolicEngine()
 _introspection_router = IntrospectionRouter()
+_profiler = OperationProfiler()
+_resource_governor = ResourceGovernor()
+_scheduler = BudgetedScheduler()
 
 _soma_memory = SomaMemory()
 _goal_store = GoalStore()
@@ -604,6 +647,7 @@ _internal_loop: InternalLoop | None = InternalLoop(
     mutation=None,
     autobiography=_autobiography,
     experience=_experience,
+    resource_governor=_resource_governor,
 )
 
 if _cfg_ref.journal_enabled:
@@ -701,6 +745,7 @@ if _cfg_ref.bios_loop:
         vector_interpreter=_vector_interpreter,
         power_policy=_power_policy,
         call_llm_raw=None,  # wired after call_llm_raw exists
+        resource_governor=_resource_governor,
     )
 
 
@@ -1729,7 +1774,9 @@ def build_policy_state(snapshot: dict[str, Any]) -> dict[str, Any]:
 def apply_autonomic_rate(policy: dict[str, Any]) -> None:
     if not AUTONOMIC_HZ_ENABLED:
         return
+    resource_max = float(_resource_governor.recommended_tick_hz())
     desired = clamp(float(policy.get("target_hz") or runtime["hz"]), 0.2, 20.0)
+    desired = min(desired, resource_max)
     current = float(runtime["hz"])
     runtime["hz"] = round(current + ((desired - current) * 0.22), 3)
     runtime["last_policy_hz"] = desired
@@ -2082,6 +2129,14 @@ def call_llm_raw(prompt: str, timeout_s: float = 15.0) -> str | None:
     config = get_llm_request_config()
     if config is None:
         return None
+    allowed, _reason = _resource_governor.allow("internal_llm", estimated_cost="high")
+    if not allowed:
+        return None
+    prompt = str(prompt or "")
+    if len(prompt) > _cfg_ref.internal_llm_max_prompt_chars:
+        head = max(400, int(_cfg_ref.internal_llm_max_prompt_chars * 0.65))
+        tail = max(200, _cfg_ref.internal_llm_max_prompt_chars - head - 32)
+        prompt = prompt[:head] + "\n\n[context trimmed for resource budget]\n\n" + prompt[-tail:]
     # For discovery we want plain text, so strip JSON response_format if present
     extra = {k: v for k, v in config.get("extra_payload", {}).items() if k != "response_format"}
     payload = {
@@ -2105,6 +2160,7 @@ def call_llm_raw(prompt: str, timeout_s: float = 15.0) -> str | None:
     if config["api_key"]:
         headers["Authorization"] = f"Bearer {config['api_key']}"
     req = urllib.request.Request(config["endpoint"], data=body, headers=headers, method="POST")
+    started = time.perf_counter()
     try:
         with urllib.request.urlopen(req, timeout=timeout_s) as resp:
             raw = resp.read().decode("utf-8")
@@ -2112,9 +2168,15 @@ def call_llm_raw(prompt: str, timeout_s: float = 15.0) -> str | None:
         text = extract_content(parsed)
         if text:
             runtime["llm_last_success_at"] = time.monotonic()
+        duration_ms = (time.perf_counter() - started) * 1000.0
+        _profiler.record("internal_llm", duration_ms)
+        _resource_governor.record_operation("internal_llm", duration_ms, ok=bool(text))
         return text or None
     except Exception as exc:
         print(f"[LLM-RAW] Failed: {exc}")
+        duration_ms = (time.perf_counter() - started) * 1000.0
+        _profiler.record("internal_llm", duration_ms)
+        _resource_governor.record_operation("internal_llm", duration_ms, ok=False)
         return None
 
 
@@ -2431,6 +2493,8 @@ def call_llm(user_text: str, snapshot: dict[str, Any]) -> dict[str, Any] | None:
     runtime["llm_last_success_at"] = time.monotonic()
 
     llm_ms = round((time.perf_counter() - started) * 1000.0, 3)
+    _profiler.record("chat_llm", llm_ms)
+    _resource_governor.record_operation("chat_llm", llm_ms)
     content = extract_content(response_json)
     parsed = parse_llm_json(content)
 
@@ -2460,69 +2524,8 @@ def call_llm(user_text: str, snapshot: dict[str, Any]) -> dict[str, Any] | None:
     return normalized
 
 
-def build_snapshot() -> dict[str, Any]:
-    started = time.perf_counter()
-    packet = provider.read()
-    provider_ms = (time.perf_counter() - started) * 1000.0
-
-    core = dict(packet["core"])
-    system = dict(packet["system"])
-    machine_vector = build_machine_state_vector(system)
-    tensor = run_projector(core, machine_vector)
-    affect = derive_affect(core, system)
-    derived = derive_state(core, system, affect)
-    homeostasis = build_homeostasis_state(core, system, affect, derived)
-    actions = derive_actions(affect)
-    provider_info = {
-        "name": str(packet["provider"]),
-        "is_real": bool(packet["is_real"]),
-        "source_quality": rounded(system.get("source_quality"), 3) or 0.0,
-    }
-    scenario = classify_state(core, system, derived, packet.get("scenario"))
-    snapshot = {
-        "timestamp": float(packet["timestamp"]),
-        "provider": provider_info,
-        "sensors": core,
-        "system": system,
-        "raw": dict(packet.get("raw") or {}),
-        "projector": tensor["projector"],
-        "tensor": tensor,
-        "machine_vector": machine_vector,
-        "affect": affect,
-        "derived": derived,
-        "homeostasis": homeostasis,
-        "actions": actions,
-        "scenario": scenario,
-        "provider_ms": round(provider_ms, 3),
-        "projector_ms": tensor["projector_ms"],
-    }
-    snapshot["sample_minutes"] = round((time.time() - float(runtime.get("started_at", time.time()))) / 60.0, 3)
-    snapshot["llm"] = build_llm_status(snapshot)
-    baseline_update = _baseline_store.update_from_snapshot(snapshot)
-    snapshot["baseline_update"] = baseline_update
-    snapshot["baselines"] = _baseline_store.summary()
-    if _autobiography is not None:
-        try:
-            if baseline_update.get("stable_now"):
-                _autobiography.write_meaningful_event({
-                    "kind": "baseline",
-                    "title": "Body baseline established",
-                    "summary": f"Stable baselines: {', '.join(baseline_update['stable_now'])}.",
-                    "impact": "medium",
-                    "timestamp": snapshot["timestamp"],
-                })
-            elif baseline_update.get("material_changes"):
-                _autobiography.write_meaningful_event({
-                    "kind": "body_learning",
-                    "title": "Baseline materially changed",
-                    "summary": f"Material baseline changes: {', '.join(baseline_update['material_changes'])}.",
-                    "impact": "medium",
-                    "timestamp": snapshot["timestamp"],
-                })
-        except Exception:
-            pass
-    snapshot["command_agency"] = _soma_memory.get_growth().get("command_agency", {})
-    snapshot["autobiography_quality"] = _autobiography.get_quality_summary() if _autobiography is not None else {
+def _default_autobiography_quality() -> dict[str, Any]:
+    return {
         "stage": "autobiographical_baseline",
         "lessons_count": 0,
         "meaningful_reflections": 0,
@@ -2533,114 +2536,453 @@ def build_snapshot() -> dict[str, Any]:
         "last_nightly_reflection": "",
         "shallow": True,
     }
-    snapshot["cpp_bridge_status"] = _cpp_bridge.run_projection_once(snapshot) if _cpp_bridge is not None else {"enabled": False, "status": "missing"}
-    snapshot["mutation_status"] = _mutation_sandbox.status() if _mutation_sandbox is not None else {"enabled": False, "recommendation": ""}
-    snapshot["reward"] = _reward_engine.summary()
-    snapshot["internal_loop"] = _internal_loop.status() if _internal_loop is not None else {"enabled": False}
-    snapshot["_growth"] = _soma_memory.get_growth()
-    snapshot["vector_state"] = _vector_interpreter.interpret(snapshot)
-    snapshot["metabolic"] = _metabolic_engine.update(
-        snapshot,
-        {
-            "growth": snapshot["_growth"],
-            "reward": snapshot["reward"],
-            "vector_state": snapshot["vector_state"],
-            "mutation": snapshot["mutation_status"],
-            "cpp_bridge": snapshot["cpp_bridge_status"],
-            "command_agency": snapshot["command_agency"],
-            "baselines": snapshot["baselines"],
-            "llm_mode": snapshot["llm"].get("mode"),
-            "llm_available": snapshot["llm"].get("available"),
-            "capabilities": {"survival_policy": _autonomous_exec is not None},
+
+
+def _empty_tensor_bundle() -> dict[str, Any]:
+    return {
+        "heatmap": [0.0] * HEATMAP_BINS,
+        "norm": 0.0,
+        "mean": 0.0,
+        "std": 0.0,
+        "top_dims": [],
+        "top_vals": [],
+        "seg_energy": [0.0] * 16,
+        "projector_ms": 0.0,
+        "projector": {
+            "available": bool(projector is not None),
+            "mode": projector_meta["mode"],
+            "dim": LLM_EMB_DIM,
+            "norm": 0.0,
+            "top_dims": [],
+            "top_vals": [],
+            "path": projector_meta["path"],
+            "error": projector_meta["error"],
+            "machine_fusion_enabled": machine_fusion_meta.get("available", False),
+            "machine_fusion_gain": machine_fusion_meta.get("gain", 0.0),
+            "machine_vector_norm": 0.0,
+            "machine_fusion_mode": machine_fusion_meta["mode"],
+            "machine_fusion_delta_norm": 0.0,
         },
+    }
+
+
+def _medium_cache() -> dict[str, Any]:
+    cache = runtime.setdefault("medium", {})
+    if cache.get("tensor") is None:
+        cache["tensor"] = _empty_tensor_bundle()
+    cache.setdefault("projector", cache["tensor"]["projector"])
+    cache.setdefault("projector_ms", 0.0)
+    cache.setdefault("cpp_bridge_status", {"enabled": False, "status": "missing"})
+    cache.setdefault("mutation_status", {"enabled": False, "recommendation": ""})
+    cache.setdefault("reward", {})
+    cache.setdefault("internal_loop", {"enabled": False})
+    cache.setdefault("vector_state", {})
+    cache.setdefault("metabolic", {})
+    cache.setdefault("bios_status", {"enabled": False})
+    cache.setdefault("mind", {})
+    cache.setdefault("drives", {})
+    cache.setdefault("growth", {})
+    cache.setdefault("trace", [])
+    cache.setdefault("life_drive", {})
+    cache.setdefault("baselines", {})
+    cache.setdefault("baseline_update", {})
+    cache.setdefault("command_agency", {})
+    cache.setdefault("autobiography_quality", _default_autobiography_quality())
+    return cache
+
+
+def _snapshot_metabolic_context(snapshot: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "growth": snapshot.get("_growth", {}) or {},
+        "reward": snapshot.get("reward", {}) or {},
+        "vector_state": snapshot.get("vector_state", {}) or {},
+        "mutation": snapshot.get("mutation_status", {}) or {},
+        "cpp_bridge": snapshot.get("cpp_bridge_status", {}) or {},
+        "command_agency": snapshot.get("command_agency", {}) or {},
+        "baselines": snapshot.get("baselines", {}) or {},
+        "llm_mode": snapshot.get("llm", {}).get("mode"),
+        "llm_available": snapshot.get("llm", {}).get("available"),
+        "capabilities": {"survival_policy": _autonomous_exec is not None},
+        "resource": snapshot.get("resource", {}) or {},
+    }
+
+
+def _refresh_resource_metrics() -> None:
+    perf = runtime.get("performance") or {}
+    ops = perf.get("operations") or {}
+    _resource_governor.update_runtime_metrics(
+        {
+            "ui_clients": len(clients),
+            "event_loop_lag_ms": perf.get("event_loop_lag_ms", 0.0),
+            "tick_total_ms": perf.get("tick_total_ms", 0.0),
+            "tick_total_ms_avg": (ops.get("tick_total") or {}).get("avg_ms", 0.0),
+            "provider_ms_avg": (ops.get("provider_read") or {}).get("avg_ms", 0.0),
+            "projector_ms_avg": (ops.get("projector") or {}).get("avg_ms", 0.0),
+            "metabolic_stress": ((runtime.get("last_snapshot") or {}).get("metabolic") or {}).get("stress", 0.0),
+            "reward_trend": ((runtime.get("last_snapshot") or {}).get("reward") or {}).get("trend", 0.0),
+        }
     )
-    snapshot["bios_status"] = _bios_loop.status() if _bios_loop is not None else {"enabled": False}
+
+
+def _resource_signature(snapshot: dict[str, Any]) -> str:
+    parts = [
+        str(snapshot.get("scenario") or ""),
+        str((snapshot.get("resource") or {}).get("mode") or ""),
+        str((snapshot.get("metabolic") or {}).get("mode") or ""),
+        str((snapshot.get("bios_status") or {}).get("last_task") or ""),
+        str((snapshot.get("mutation_status") or {}).get("recommendation") or ""),
+        f"{float(runtime.get('hz', 0.0)):.2f}",
+    ]
+    return "|".join(parts)
+
+
+def clamp_requested_hz(requested_hz: float) -> float:
+    requested = clamp(float(requested_hz), 0.2, 20.0)
+    if _cfg_ref.operator_can_override_resource_hz:
+        return requested
+    return min(requested, _resource_governor.recommended_tick_hz())
+
+
+def _record_resource_reward_once(kind: str, evidence: dict[str, Any], runtime_key: str, *, min_interval_sec: float = 30.0) -> None:
+    if _reward_engine is None:
+        return
+    now = time.time()
+    last = float(runtime.get(runtime_key, 0.0) or 0.0)
+    if (now - last) < max(1.0, float(min_interval_sec)):
+        return
+    scored = _reward_engine.score_event({"kind": kind, "evidence": evidence})
+    _reward_engine.record_reward(kind, float(scored.get("value", 0.0) or 0.0), evidence)
+    runtime[runtime_key] = now
+
+
+def full_payload_due(snapshot: dict[str, Any]) -> bool:
+    full_interval = max(
+        1.0 / max(float((snapshot.get("resource") or {}).get("budget", {}).get("ui_hz_max", _cfg_ref.ui_full_payload_hz) or _cfg_ref.ui_full_payload_hz), 0.1),
+        0.1,
+    )
+    full_signature = _resource_signature(snapshot)
+    return (
+        runtime.get("force_full_payload", False)
+        or full_signature != runtime.get("last_full_payload_signature", "")
+        or runtime.get("last_full_payload_at", 0.0) <= 0.0
+        or _scheduler.allow("ui_full_payload", full_interval, _resource_governor, cost="low")[0]
+    )
+
+
+def build_fast_snapshot() -> dict[str, Any]:
+    _refresh_resource_metrics()
+    started = time.perf_counter()
+    packet = provider.read()
+    provider_ms = (time.perf_counter() - started) * 1000.0
+    _profiler.record("provider_read", provider_ms)
+    _resource_governor.record_operation("provider_read", provider_ms)
+
+    core = dict(packet["core"])
+    system = dict(packet["system"])
+    machine_vector = build_machine_state_vector(system)
+    affect = derive_affect(core, system)
+    derived = derive_state(core, system, affect)
+    homeostasis = build_homeostasis_state(core, system, affect, derived)
+    actions = derive_actions(affect)
+    provider_info = {
+        "name": str(packet["provider"]),
+        "is_real": bool(packet["is_real"]),
+        "source_quality": rounded(system.get("source_quality"), 3) or 0.0,
+    }
+    scenario = classify_state(core, system, derived, packet.get("scenario"))
+    cache = _medium_cache()
+    tensor = cache.get("tensor") or _empty_tensor_bundle()
+    snapshot = {
+        "timestamp": float(packet["timestamp"]),
+        "provider": provider_info,
+        "sensors": core,
+        "system": system,
+        "raw": dict(packet.get("raw") or {}),
+        "projector": cache.get("projector") or tensor["projector"],
+        "tensor": tensor,
+        "machine_vector": machine_vector,
+        "affect": affect,
+        "derived": derived,
+        "homeostasis": homeostasis,
+        "actions": actions,
+        "scenario": scenario,
+        "provider_ms": round(provider_ms, 3),
+        "projector_ms": round(float(cache.get("projector_ms", tensor.get("projector_ms", 0.0)) or 0.0), 3),
+        "sample_minutes": round((time.time() - float(runtime.get("started_at", time.time()))) / 60.0, 3),
+        "llm": {},
+        "baseline_update": cache.get("baseline_update") or {},
+        "baselines": cache.get("baselines") or {},
+        "command_agency": cache.get("command_agency") or _soma_memory.get_growth().get("command_agency", {}),
+        "autobiography_quality": cache.get("autobiography_quality") or _default_autobiography_quality(),
+        "cpp_bridge_status": cache.get("cpp_bridge_status") or {"enabled": False, "status": "missing"},
+        "mutation_status": cache.get("mutation_status") or {"enabled": False, "recommendation": ""},
+        "reward": cache.get("reward") or {},
+        "internal_loop": cache.get("internal_loop") or {"enabled": False},
+        "_growth": cache.get("growth") or _soma_memory.get_growth(),
+        "vector_state": cache.get("vector_state") or {},
+        "metabolic": cache.get("metabolic") or {},
+        "bios_status": cache.get("bios_status") or {"enabled": False},
+        "mind": cache.get("mind") or {},
+        "_drives": cache.get("drives") or {},
+        "_trace": cache.get("trace") or [],
+        "life_drive": cache.get("life_drive") or {},
+        "resource": runtime.get("resource") or {},
+        "performance": runtime.get("performance") or {},
+        "scheduler": _scheduler.status(),
+    }
+    snapshot["llm"] = build_llm_status(snapshot)
     snapshot["summary"] = build_summary(snapshot)
+    snapshot["policy"] = cache.get("policy") or build_policy_state(snapshot)
+    snapshot["actuation"] = cache.get("actuation") or build_actuation_state(snapshot, snapshot["policy"])
+    return snapshot
+
+
+def update_medium_state(snapshot: dict[str, Any], *, force: bool = False) -> dict[str, Any]:
+    cache = _medium_cache()
+    resource_state = _resource_governor.sample(snapshot)
+    previous_resource_mode = str((runtime.get("resource") or {}).get("mode") or "")
+    previous_metabolic = dict(cache.get("metabolic") or snapshot.get("metabolic") or {})
+    snapshot["resource"] = resource_state
+    runtime["resource"] = resource_state
+    budget = resource_state.get("budget") or {}
+    now = time.time()
+
+    def _interval_from_hz(hz: float, fallback: float) -> float:
+        if hz <= 0.0:
+            return fallback
+        return max(1.0 / hz, fallback)
+
+    baselines_interval = 5.0 if resource_state.get("mode") == "normal" else 10.0
+    if force or _scheduler.allow("baseline_update", baselines_interval, _resource_governor, cost="low")[0]:
+        started = time.perf_counter()
+        baseline_update = _baseline_store.update_from_snapshot(snapshot)
+        duration_ms = (time.perf_counter() - started) * 1000.0
+        _profiler.record("baseline_update", duration_ms)
+        _resource_governor.record_operation("baseline_update", duration_ms)
+        cache["baseline_update"] = baseline_update
+        cache["baselines"] = _baseline_store.summary()
+        cache["baselines_updated_at"] = now
+        _scheduler.mark("baseline_update")
+        if _autobiography is not None:
+            try:
+                if baseline_update.get("stable_now"):
+                    _autobiography.write_meaningful_event({
+                        "kind": "baseline",
+                        "title": "Body baseline established",
+                        "summary": f"Stable baselines: {', '.join(baseline_update['stable_now'])}.",
+                        "impact": "medium",
+                        "timestamp": snapshot["timestamp"],
+                    })
+                elif baseline_update.get("material_changes"):
+                    _autobiography.write_meaningful_event({
+                        "kind": "body_learning",
+                        "title": "Baseline materially changed",
+                        "summary": f"Material baseline changes: {', '.join(baseline_update['material_changes'])}.",
+                        "impact": "medium",
+                        "timestamp": snapshot["timestamp"],
+                    })
+            except Exception:
+                pass
+
+    projector_interval = _interval_from_hz(float(budget.get("projector_hz_max", _cfg_ref.projector_hz_normal) or _cfg_ref.projector_hz_normal), 1.0)
+    if force or cache.get("projector_updated_at", 0.0) <= 0.0 or _scheduler.allow("projector", projector_interval, _resource_governor, cost="medium")[0]:
+        started = time.perf_counter()
+        tensor = run_projector(snapshot["sensors"], snapshot["machine_vector"])
+        duration_ms = (time.perf_counter() - started) * 1000.0
+        _profiler.record("projector", duration_ms)
+        _resource_governor.record_operation("projector", duration_ms)
+        cache["tensor"] = tensor
+        cache["projector"] = tensor["projector"]
+        cache["projector_ms"] = tensor["projector_ms"]
+        cache["projector_updated_at"] = now
+        _scheduler.mark("projector")
+
+    if _cpp_bridge is not None and (force or _scheduler.allow("cpp_smoke", _cfg_ref.cpp_smoke_test_interval_sec, _resource_governor, cost="medium")[0]):
+        started = time.perf_counter()
+        cache["cpp_bridge_status"] = _cpp_bridge.smoke_test()
+        duration_ms = (time.perf_counter() - started) * 1000.0
+        _profiler.record("cpp_smoke_test", duration_ms)
+        _resource_governor.record_operation("cpp_smoke_test", duration_ms)
+        cache["cpp_updated_at"] = now
+        _scheduler.mark("cpp_smoke")
+    if _cpp_bridge is not None and (force or _scheduler.allow("cpp_projection", _interval_from_hz(float(budget.get("cpp_bridge_hz_max", _cfg_ref.cpp_projection_hz) or _cfg_ref.cpp_projection_hz), 30.0), _resource_governor, cost="high")[0]):
+        started = time.perf_counter()
+        cache["cpp_bridge_status"] = _cpp_bridge.run_projection_once({**snapshot, "projector": cache.get("projector") or snapshot["projector"]})
+        duration_ms = (time.perf_counter() - started) * 1000.0
+        _profiler.record("cpp_bridge_projection", duration_ms)
+        _resource_governor.record_operation("cpp_bridge_projection", duration_ms)
+        cache["cpp_updated_at"] = now
+        _scheduler.mark("cpp_projection")
+
+    snapshot["tensor"] = cache.get("tensor") or snapshot["tensor"]
+    snapshot["projector"] = cache.get("projector") or snapshot["projector"]
+    snapshot["projector_ms"] = round(float(cache.get("projector_ms", snapshot.get("projector_ms", 0.0)) or 0.0), 3)
+    snapshot["cpp_bridge_status"] = cache.get("cpp_bridge_status") or snapshot["cpp_bridge_status"]
+    snapshot["mutation_status"] = _mutation_sandbox.status() if _mutation_sandbox is not None else snapshot["mutation_status"]
+    snapshot["reward"] = _reward_engine.summary()
+    snapshot["internal_loop"] = _internal_loop.status() if _internal_loop is not None else snapshot["internal_loop"]
+    snapshot["baselines"] = cache.get("baselines") or snapshot["baselines"]
+    snapshot["baseline_update"] = cache.get("baseline_update") or snapshot["baseline_update"]
+    snapshot["command_agency"] = _soma_memory.get_growth().get("command_agency", {})
+
+    vector_interval = _interval_from_hz(float(budget.get("vector_hz_max", _cfg_ref.vector_interpreter_hz) or _cfg_ref.vector_interpreter_hz), 5.0)
+    if force or cache.get("vector_updated_at", 0.0) <= 0.0 or _scheduler.allow("vector_interpreter", vector_interval, _resource_governor, cost="medium")[0]:
+        started = time.perf_counter()
+        cache["vector_state"] = _vector_interpreter.interpret(snapshot)
+        duration_ms = (time.perf_counter() - started) * 1000.0
+        _profiler.record("vector_interpreter", duration_ms)
+        _resource_governor.record_operation("vector_interpreter", duration_ms)
+        cache["vector_updated_at"] = now
+        _scheduler.mark("vector_interpreter")
+    snapshot["vector_state"] = cache.get("vector_state") or snapshot["vector_state"]
+
+    metabolic_interval = 2.0 if resource_state.get("mode") == "normal" else 5.0
+    if force or cache.get("metabolic_updated_at", 0.0) <= 0.0 or _scheduler.allow("metabolic_update", metabolic_interval, _resource_governor, cost="medium")[0]:
+        started = time.perf_counter()
+        cache["metabolic"] = _metabolic_engine.update(snapshot, _snapshot_metabolic_context(snapshot))
+        duration_ms = (time.perf_counter() - started) * 1000.0
+        _profiler.record("metabolic_update", duration_ms)
+        _resource_governor.record_operation("metabolic_update", duration_ms)
+        cache["metabolic_updated_at"] = now
+        _scheduler.mark("metabolic_update")
+    snapshot["metabolic"] = cache.get("metabolic") or snapshot["metabolic"]
+
+    snapshot["resource"] = _resource_governor.sample(snapshot)
+    runtime["resource"] = snapshot["resource"]
+    cache["mutation_status"] = snapshot["mutation_status"]
+    cache["reward"] = snapshot["reward"]
+    cache["internal_loop"] = snapshot["internal_loop"]
+    cache["command_agency"] = snapshot["command_agency"]
+
     snapshot["policy"] = build_policy_state(snapshot)
     apply_autonomic_rate(snapshot["policy"])
     snapshot["actuation"] = build_actuation_state(snapshot, snapshot["policy"])
     dispatch_actuation(snapshot)
-    mind_state = _soma_mind.tick(snapshot)
-    snapshot["mind"] = mind_state
-    # Expose drives and growth at top level for public_payload (include dominant from mind)
-    _d = dict(mind_state.get("drives", {}))
-    _d["dominant"] = mind_state.get("dominant_drive", "")
-    snapshot["_drives"] = _d
-    snapshot["_growth"] = mind_state.get("growth", {})
-    snapshot["_trace"] = mind_state.get("trace", [])
-    snapshot["life_drive"] = mind_state.get("life_drive", {})
-    snapshot["internal_loop"] = _internal_loop.status() if _internal_loop is not None else snapshot["internal_loop"]
-    snapshot["reward"] = _reward_engine.summary()
-    snapshot["metabolic"] = _metabolic_engine.update(
-        snapshot,
-        {
-            "growth": snapshot["_growth"],
-            "reward": snapshot["reward"],
-            "vector_state": snapshot["vector_state"],
-            "mutation": snapshot["mutation_status"],
-            "cpp_bridge": snapshot["cpp_bridge_status"],
-            "command_agency": snapshot["command_agency"],
-            "llm_mode": snapshot["llm"].get("mode"),
-            "llm_available": snapshot["llm"].get("available"),
-            "capabilities": {"survival_policy": _autonomous_exec is not None},
-        },
-    )
-    runtime["last_snapshot"] = snapshot
-    remember_somatic_trace(snapshot)
-    consolidate_memory(snapshot)
+    cache["policy"] = snapshot["policy"]
+    cache["actuation"] = snapshot["actuation"]
 
-    # Phase 6: slow routines (non-blocking, at most once per ~30 ticks)
-    if _routine_runner is not None and (runtime.get("_tick_count", 0) % 60 == 0):
+    mind_interval = 2.0 if snapshot["resource"].get("mode") == "normal" else 5.0
+    if force or cache.get("mind_updated_at", 0.0) <= 0.0 or _scheduler.allow("mind_tick", mind_interval, _resource_governor, cost="medium")[0]:
+        started = time.perf_counter()
+        mind_state = _soma_mind.tick(snapshot)
+        duration_ms = (time.perf_counter() - started) * 1000.0
+        _profiler.record("mind_tick", duration_ms)
+        _resource_governor.record_operation("mind_tick", duration_ms)
+        cache["mind"] = mind_state
+        drives = dict(mind_state.get("drives", {}))
+        drives["dominant"] = mind_state.get("dominant_drive", "")
+        cache["drives"] = drives
+        cache["growth"] = mind_state.get("growth", {})
+        cache["trace"] = mind_state.get("trace", [])
+        cache["life_drive"] = mind_state.get("life_drive", {})
+        cache["mind_updated_at"] = now
+        _scheduler.mark("mind_tick")
+
+    cache["autobiography_quality"] = _autobiography.get_quality_summary() if _autobiography is not None else _default_autobiography_quality()
+    snapshot["mind"] = cache.get("mind") or {}
+    snapshot["_drives"] = cache.get("drives") or {}
+    snapshot["_growth"] = cache.get("growth") or snapshot.get("_growth", {})
+    snapshot["_trace"] = cache.get("trace") or []
+    snapshot["life_drive"] = cache.get("life_drive") or {}
+    snapshot["autobiography_quality"] = cache.get("autobiography_quality") or _default_autobiography_quality()
+    snapshot["scheduler"] = _scheduler.status()
+    snapshot["summary"] = build_summary(snapshot)
+    runtime["last_snapshot"] = snapshot
+
+    if previous_resource_mode != str(snapshot["resource"].get("mode") or ""):
+        runtime["force_full_payload"] = True
+        _reward_engine.record_reward(
+            "resource_pressure_detected" if snapshot["resource"].get("mode") != "normal" else "resource_preserved",
+            _reward_engine.score_event({"kind": "resource_pressure_detected" if snapshot["resource"].get("mode") != "normal" else "resource_preserved"}).get("value", 0.0),
+            {"resource": snapshot["resource"]},
+        )
+    if snapshot["metabolic"].get("growth_suspended_by_resource") and not previous_metabolic.get("growth_suspended_by_resource"):
+        _record_resource_reward_once(
+            "growth_suspended_for_host_health",
+            {
+                "resource": snapshot["resource"],
+                "metabolic": {
+                    "mode": snapshot["metabolic"].get("mode"),
+                    "reasons": snapshot["metabolic"].get("reasons"),
+                    "host_pressure": snapshot["metabolic"].get("host_pressure"),
+                },
+            },
+            "last_growth_resource_reward_at",
+            min_interval_sec=60.0,
+        )
+    if snapshot["metabolic"].get("mutation_suspended_by_resource") and not previous_metabolic.get("mutation_suspended_by_resource"):
+        _record_resource_reward_once(
+            "mutation_blocked_for_host_health",
+            {
+                "resource": snapshot["resource"],
+                "metabolic": {
+                    "resource_mode": snapshot["metabolic"].get("resource_mode"),
+                    "host_pressure": snapshot["metabolic"].get("host_pressure"),
+                },
+            },
+            "last_mutation_resource_reward_at",
+            min_interval_sec=60.0,
+        )
+
+    runtime["performance"] = _profiler.summary()
+    snapshot["performance"] = runtime["performance"]
+    return snapshot
+
+
+def run_slow_maintenance(snapshot: dict[str, Any], *, force: bool = False) -> None:
+    if force or _scheduler.allow("somatic_trace", 2.0, _resource_governor, cost="low")[0]:
+        remember_somatic_trace(snapshot)
+        _scheduler.mark("somatic_trace")
+    if force or _scheduler.allow("memory_consolidation", max(CONSOLIDATION_INTERVAL_S, _cfg_ref.resource_write_state_interval_sec), _resource_governor, cost="low")[0]:
+        consolidate_memory(snapshot)
+        _scheduler.mark("memory_consolidation")
+    if _routine_runner is not None and (force or _scheduler.allow("routines", max(_cfg_ref.routine_min_interval_s, 300.0), _resource_governor, cost="low")[0]):
         try:
             _routine_runner.maybe_run(snapshot)
+            _scheduler.mark("routines")
         except Exception:
             pass
-    runtime["_tick_count"] = runtime.get("_tick_count", 0) + 1
-
-    # Phase 6: nightly reflection (checked cheaply every ~120 ticks)
-    if _nightly_reflection is not None and (runtime.get("_tick_count", 0) % 240 == 0):
+    if _nightly_reflection is not None and (force or _scheduler.allow("nightly", 300.0, _resource_governor, cost="low")[0]):
         try:
-            _nightly_reflection.check_and_run(
-                last_user_interaction_at=runtime.get("last_user_message_at", 0.0)
-            )
+            _nightly_reflection.check_and_run(last_user_interaction_at=runtime.get("last_user_message_at", 0.0))
+            _scheduler.mark("nightly")
         except Exception:
             pass
-
-    # Phase 6: rotate hot journal files if needed
-    if _journal is not None and (runtime.get("_tick_count", 0) % 600 == 0):
+    if _journal is not None and (force or _scheduler.allow("journal_rotation", 600.0, _resource_governor, cost="low")[0]):
         try:
             _journal.rotate_if_needed()
+            _scheduler.mark("journal_rotation")
         except Exception:
             pass
-
-    if _bios_loop is not None:
+    if _bios_loop is not None and (force or _scheduler.allow("bios_cycle", max(_resource_governor.recommended_bios_interval_sec(), 60.0), _resource_governor, cost="low" if (snapshot.get("metabolic") or {}).get("recovery_required") else "medium")[0]):
         try:
-            _bios_loop.maybe_run(
-                snapshot,
-                last_user_interaction_at=float(runtime.get("last_user_message_at", 0.0)),
-            )
-            snapshot["bios_status"] = _bios_loop.status()
-            snapshot["internal_loop"] = _internal_loop.status() if _internal_loop is not None else snapshot["internal_loop"]
-            snapshot["mutation_status"] = _mutation_sandbox.status() if _mutation_sandbox is not None else snapshot["mutation_status"]
-            snapshot["reward"] = _reward_engine.summary()
-            snapshot["metabolic"] = _metabolic_engine.update(
-                snapshot,
-                {
-                    "growth": snapshot["_growth"],
-                    "reward": snapshot["reward"],
-                    "vector_state": snapshot["vector_state"],
-                    "mutation": snapshot["mutation_status"],
-                    "cpp_bridge": snapshot["cpp_bridge_status"],
-                    "command_agency": snapshot["command_agency"],
-                    "baselines": snapshot["baselines"],
-                    "llm_mode": snapshot["llm"].get("mode"),
-                    "llm_available": snapshot["llm"].get("available"),
-                    "capabilities": {"survival_policy": _autonomous_exec is not None},
-                },
-            )
+            started = time.perf_counter()
+            result = _bios_loop.maybe_run(snapshot, last_user_interaction_at=float(runtime.get("last_user_message_at", 0.0)))
+            duration_ms = (time.perf_counter() - started) * 1000.0
+            _profiler.record("bios", duration_ms)
+            _resource_governor.record_operation("bios_cycle", duration_ms, ok=result is not None)
+            cache = _medium_cache()
+            cache["bios_status"] = _bios_loop.status()
+            cache["internal_loop"] = _internal_loop.status() if _internal_loop is not None else cache.get("internal_loop", {"enabled": False})
+            cache["mutation_status"] = _mutation_sandbox.status() if _mutation_sandbox is not None else cache.get("mutation_status", {})
+            cache["reward"] = _reward_engine.summary()
+            snapshot["bios_status"] = cache["bios_status"]
+            snapshot["internal_loop"] = cache["internal_loop"]
+            snapshot["mutation_status"] = cache["mutation_status"]
+            snapshot["reward"] = cache["reward"]
+            cache["metabolic"] = _metabolic_engine.update(snapshot, _snapshot_metabolic_context(snapshot))
+            snapshot["metabolic"] = cache["metabolic"]
+            cache["bios_updated_at"] = time.time()
+            _scheduler.mark("bios_cycle")
         except Exception:
             pass
 
+
+def build_snapshot(force_full: bool = False) -> dict[str, Any]:
+    snapshot = build_fast_snapshot()
+    update_medium_state(snapshot, force=force_full)
+    run_slow_maintenance(snapshot, force=force_full)
+    runtime["last_snapshot"] = snapshot
     return snapshot
 
 
@@ -2708,6 +3050,8 @@ def _journal_status() -> dict[str, Any]:
 
 def public_payload(snapshot: dict[str, Any], *, llm_override: dict[str, Any] | None = None) -> dict[str, Any]:
     llm_status = build_llm_status(snapshot, llm_override)
+    cache = _medium_cache()
+    now = time.time()
     return {
         "timestamp": snapshot["timestamp"],
         "provider": snapshot["provider"],
@@ -2743,9 +3087,12 @@ def public_payload(snapshot: dict[str, Any], *, llm_override: dict[str, Any] | N
         "mutation": snapshot.get("mutation_status", {}),
         "cpp_bridge": snapshot.get("cpp_bridge_status", {}),
         "metabolic": snapshot.get("metabolic", {}),
+        "resource": snapshot.get("resource", {}),
+        "performance": snapshot.get("performance", runtime.get("performance", {})),
         "vector_state": snapshot.get("vector_state", {}),
         "reward": snapshot.get("reward", {}),
         "internal_loop": snapshot.get("internal_loop", {}),
+        "scheduler": snapshot.get("scheduler", _scheduler.status()),
         "test_runner": _frontend_test_runner.status(),
         "autobiography": snapshot.get("autobiography_quality", {}),
         "life_drive": snapshot.get("life_drive", {}),
@@ -2758,6 +3105,41 @@ def public_payload(snapshot: dict[str, Any], *, llm_override: dict[str, Any] | N
             "survival_policy": _autonomous_exec is not None,
         },
         "journal": _journal_status(),
+        "runtime_budget": {
+            "projector_age_sec": round(max(0.0, now - float(cache.get("projector_updated_at", 0.0) or 0.0)), 3),
+            "vector_age_sec": round(max(0.0, now - float(cache.get("vector_updated_at", 0.0) or 0.0)), 3),
+            "cpp_last_smoke_at": float((snapshot.get("cpp_bridge_status") or {}).get("last_smoke_at", 0.0) or 0.0),
+            "cpp_last_projection_at": float((snapshot.get("cpp_bridge_status") or {}).get("last_projection_at", 0.0) or 0.0),
+            "bios_interval_sec": float(_resource_governor.recommended_bios_interval_sec()),
+            "recommended_tick_hz": float(_resource_governor.recommended_tick_hz()),
+        },
+    }
+
+
+def light_tick_payload(snapshot: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "type": "tick_light",
+        "timestamp": snapshot["timestamp"],
+        "sensors": {
+            "voltage": rounded(snapshot["sensors"].get("voltage"), 3),
+            "temp_si": rounded(snapshot["sensors"].get("temp_si"), 3),
+            "az": rounded(snapshot["sensors"].get("az"), 3),
+        },
+        "system": {
+            "cpu_percent": rounded(snapshot["system"].get("cpu_percent"), 3),
+            "memory_percent": rounded(snapshot["system"].get("memory_percent"), 3),
+            "cpu_temp": rounded(snapshot["system"].get("cpu_temp"), 3),
+        },
+        "metabolic": {
+            "mode": (snapshot.get("metabolic") or {}).get("mode"),
+            "stability": rounded((snapshot.get("metabolic") or {}).get("stability"), 4),
+            "stress": rounded((snapshot.get("metabolic") or {}).get("stress"), 4),
+        },
+        "resource": {
+            "mode": (snapshot.get("resource") or {}).get("mode"),
+            "tick_hz": rounded(runtime.get("hz"), 3),
+            "host_pressure": rounded((snapshot.get("resource") or {}).get("host_pressure"), 4),
+        },
     }
 
 
@@ -2931,29 +3313,58 @@ def make_soma_pulse(snapshot: dict[str, Any]) -> str:
 async def broadcast(msg: dict[str, Any]):
     if not clients:
         return
+    started = time.perf_counter()
     data = safe_json_dumps(msg)
+    _resource_governor.record_bytes("ui", len(data.encode("utf-8")) * len(clients))
     await asyncio.gather(*[client.send(data) for client in list(clients)], return_exceptions=True)
+    duration_ms = (time.perf_counter() - started) * 1000.0
+    _profiler.record("websocket_broadcast", duration_ms)
+    _resource_governor.record_operation("websocket_broadcast", duration_ms)
 
 
 async def tick_loop():
-    pulse_counter = 0
-    # Emit a soma pulse every ~1 second (hz ticks) so the monitor streams continuously.
-    PULSE_EVERY = 1  # ticks per pulse; adjusted dynamically from hz below
-
+    next_target = time.monotonic()
     while True:
         hz = clamp(float(runtime["hz"]), 0.2, 20.0)
+        if not _cfg_ref.operator_can_override_resource_hz:
+            hz = min(hz, _resource_governor.recommended_tick_hz())
         runtime["hz"] = hz
         dt = 1.0 / hz
         started = time.monotonic()
+        lag_ms = max(0.0, (started - next_target) * 1000.0)
+        _profiler.set_gauge("event_loop_lag_ms", lag_ms)
 
-        snapshot = build_snapshot()
-        await broadcast({"type": "tick", **public_payload(snapshot)})
+        snapshot = build_fast_snapshot()
+        update_medium_state(snapshot, force=False)
+        run_slow_maintenance(snapshot, force=False)
 
-        # Continuous cognitive stream — one pulse per second (hz ticks at current rate).
-        pulse_counter += 1
-        pulse_every = max(1, round(hz))  # recalculate each tick
-        if pulse_counter >= pulse_every:
-            pulse_counter = 0
+        light_interval = max(1.0 / max(_cfg_ref.ui_light_tick_hz, 0.1), 0.1)
+        if runtime.get("last_light_payload_at", 0.0) <= 0.0 or _scheduler.allow("ui_light_payload", light_interval, _resource_governor, cost="low")[0]:
+            await broadcast(light_tick_payload(snapshot))
+            runtime["last_light_payload_at"] = time.time()
+            _scheduler.mark("ui_light_payload")
+
+        full_signature = _resource_signature(snapshot)
+        full_due = full_payload_due(snapshot)
+        if full_due:
+            await broadcast({"type": "tick", **public_payload(snapshot)})
+            runtime["last_full_payload_at"] = time.time()
+            runtime["last_full_payload_signature"] = full_signature
+            runtime["force_full_payload"] = False
+            _scheduler.mark("ui_full_payload")
+        else:
+            _record_resource_reward_once(
+                "payload_throttled",
+                {
+                    "resource_mode": (snapshot.get("resource") or {}).get("mode"),
+                    "tick_hz": round(float(runtime.get("hz", 0.0) or 0.0), 3),
+                    "last_full_payload_signature": runtime.get("last_full_payload_signature", ""),
+                },
+                "last_payload_throttle_reward_at",
+                min_interval_sec=30.0,
+            )
+
+        if _cfg_ref.cns_pulse_enabled and _scheduler.allow("cns_pulse", max(1.0, _cfg_ref.cns_pulse_interval_sec), _resource_governor, cost="low")[0]:
             pulse_text = make_soma_pulse(snapshot)
             await broadcast({
                 "type": "cns_stream",
@@ -2969,6 +3380,7 @@ async def tick_loop():
                     "cpu": round(float(snapshot["system"].get("cpu_percent") or 0.0), 1),
                 },
             })
+            _scheduler.mark("cns_pulse")
 
         event = maybe_autonomy_event(snapshot)
         if event:
@@ -2998,7 +3410,13 @@ async def tick_loop():
             })
 
         elapsed = time.monotonic() - started
-        await asyncio.sleep(max(0.0, dt - elapsed))
+        tick_total_ms = elapsed * 1000.0
+        _profiler.record("tick_total", tick_total_ms)
+        _resource_governor.record_operation("tick_total", tick_total_ms)
+        runtime["performance"] = _profiler.summary()
+        snapshot["performance"] = runtime["performance"]
+        next_target = started + dt
+        await asyncio.sleep(max(0.0, next_target - time.monotonic()))
 
 
 async def handler(websocket: ServerConnection):
@@ -3006,7 +3424,7 @@ async def handler(websocket: ServerConnection):
     remote = websocket.remote_address
     print(f"[WSS] Client connected: {remote} (total: {len(clients)})")
 
-    snapshot = runtime["last_snapshot"] or build_snapshot()
+    snapshot = runtime["last_snapshot"] or build_snapshot(force_full=False)
     await websocket.send(
         safe_json_dumps(
             {
@@ -3034,8 +3452,9 @@ async def handler(websocket: ServerConnection):
                 if not user_text:
                     continue
 
-                snapshot = build_snapshot()
                 runtime["last_user_message_at"] = time.time()
+                runtime["force_full_payload"] = True
+                snapshot = build_snapshot(force_full=False)
                 if _routine_runner is not None:
                     _routine_runner.set_last_user_interaction(time.monotonic())
                 _soma_mind.on_user_message(user_text, snapshot)
@@ -3159,10 +3578,18 @@ async def handler(websocket: ServerConnection):
                 scenario = str(msg.get("scenario") or "").strip()
                 if scenario and provider.supports_scenarios() and provider.set_scenario(scenario):
                     print(f"[WSS] Scenario -> {scenario}")
+                    runtime["force_full_payload"] = True
 
             elif mtype == "set_hz":
                 try:
-                    runtime["hz"] = clamp(float(msg.get("hz", runtime["hz"])), 0.2, 20.0)
+                    requested = clamp(float(msg.get("hz", runtime["hz"])), 0.2, 20.0)
+                    if _cfg_ref.operator_can_override_resource_hz:
+                        runtime["hz"] = requested
+                        runtime["manual_hz_override"] = True
+                    else:
+                        runtime["hz"] = min(requested, _resource_governor.recommended_tick_hz())
+                        runtime["manual_hz_override"] = False
+                    runtime["force_full_payload"] = True
                 except (TypeError, ValueError):
                     pass
 

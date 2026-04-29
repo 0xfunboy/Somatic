@@ -7,6 +7,7 @@ from typing import Any, Callable
 
 from soma_core.internal_prompts import growth_diagnosis_prompt
 from soma_core.config import CFG
+from soma_core.state_compaction import compact_json_value, compact_prompt, maybe_compact_json_state
 
 
 _REPO_ROOT = Path(__file__).parent.parent.resolve()
@@ -55,6 +56,7 @@ class BiosLoop:
         vector_interpreter: Any = None,
         power_policy: Any = None,
         call_llm_raw: Callable[[str, float], str | None] | None = None,
+        resource_governor: Any = None,
         data_root: Path | None = None,
     ) -> None:
         self.enabled = enabled
@@ -82,9 +84,12 @@ class BiosLoop:
         self._vector_interpreter = vector_interpreter
         self._power_policy = power_policy
         self._call_llm_raw = call_llm_raw
+        self._resource_governor = resource_governor
         self._data_root = data_root or (_REPO_ROOT / "data" / "mind")
         self._history_path = self._data_root / "bios_history.jsonl"
         self._state_path = self._data_root / "bios_state.json"
+        if CFG.auto_compact_mind_state:
+            maybe_compact_json_state(self._state_path, apply=True)
         self._state = _load_json(self._state_path, {
             "enabled": enabled,
             "running": False,
@@ -97,8 +102,8 @@ class BiosLoop:
             "llm_calls_today": 0,
             "metabolic_mode": "observe",
             "last_internal_decision": {},
-            "last_internal_prompt": "",
-            "last_raw": "",
+            "last_internal_prompt": {},
+            "last_raw": {},
             "last_parsed": {},
             "last_parsed_fallback": {},
             "last_evidence": {},
@@ -110,13 +115,32 @@ class BiosLoop:
         if not self.enabled:
             return None
         now = time.time()
-        if self.idle_only and (now - last_user_interaction_at) < self.interval_sec:
+        metabolic = snapshot.get("metabolic", {}) if isinstance(snapshot, dict) else {}
+        urgent = bool(metabolic.get("recovery_required")) or str(metabolic.get("mode") or "") == "recover"
+        effective_interval = self._effective_interval_sec(snapshot)
+        if self.idle_only and (now - last_user_interaction_at) < effective_interval and not urgent:
             return None
-        if now - float(self._state.get("last_run_at", 0.0)) < self.interval_sec:
+        if CFG.bios_yield_when_user_active and (now - last_user_interaction_at) < CFG.user_active_window_sec and not urgent:
+            if self._reward_engine is not None:
+                scored = self._reward_engine.score_event({"kind": "yielded_for_user_activity"})
+                self._reward_engine.record_reward(
+                    "yielded_for_user_activity",
+                    float(scored.get("value", 0.0) or 0.0),
+                    {
+                        "user_active_window_sec": CFG.user_active_window_sec,
+                        "seconds_since_user_input": round(max(0.0, now - last_user_interaction_at), 3),
+                    },
+                )
+            return None
+        if now - float(self._state.get("last_run_at", 0.0)) < effective_interval:
             return None
         self._prune(now)
         if len(self._run_times) >= self.max_tasks_per_hour:
             return None
+        if self._resource_governor is not None:
+            allowed, _reason = self._resource_governor.allow("bios_cycle", estimated_cost="low" if urgent else "medium")
+            if not allowed and not urgent:
+                return None
         return self.run_once(snapshot, reason="scheduled")
 
     def run_once(self, snapshot: dict, reason: str = "scheduled") -> dict:
@@ -169,20 +193,20 @@ class BiosLoop:
                 or internal_record.get("parsed_fallback")
                 or action
             )
-            self._state["last_internal_prompt"] = str(internal_record.get("prompt") or "")
-            self._state["last_raw"] = str(internal_record.get("llm_raw") or "")
+            self._state["last_internal_prompt"] = compact_prompt(str(internal_record.get("prompt") or ""), Path(self._data_root), kind="bios_prompt")
+            self._state["last_raw"] = compact_prompt(str(internal_record.get("llm_raw") or ""), Path(self._data_root), kind="bios_raw")
             self._state["last_parsed"] = internal_record.get("parsed") or {}
             self._state["last_parsed_fallback"] = internal_record.get("parsed_fallback") or {}
-            self._state["last_evidence"] = evidence
+            self._state["last_evidence"] = compact_json_value(evidence)
         else:
             task = self._select_task(context)
             self._state["last_internal_decision"] = {}
-            self._state["last_internal_prompt"] = ""
-            self._state["last_raw"] = ""
+            self._state["last_internal_prompt"] = {}
+            self._state["last_raw"] = {}
             self._state["last_parsed"] = {}
             self._state["last_parsed_fallback"] = {}
             result = self._execute_task(task, snapshot, context)
-            self._state["last_evidence"] = result.get("data") or result.get("evidence") or {}
+            self._state["last_evidence"] = compact_json_value(result.get("data") or result.get("evidence") or {})
         self._emit("bios_task_started", f"BIOS task started: {task['task']}", outputs={"reason": task.get("reason", "")})
         useful = bool(result.get("meaningful") or result.get("ok") or result.get("lessons"))
         if useful:
@@ -208,7 +232,7 @@ class BiosLoop:
 
     def status(self) -> dict:
         state = dict(self._state)
-        state["next_run_in_sec"] = max(0.0, self.interval_sec - (time.time() - float(self._state.get("last_run_at", 0.0))))
+        state["next_run_in_sec"] = max(0.0, self._effective_interval_sec(None) - (time.time() - float(self._state.get("last_run_at", 0.0))))
         return state
 
     def _build_context(self, snapshot: dict, growth: dict) -> dict[str, Any]:
@@ -252,6 +276,7 @@ class BiosLoop:
             "current_blocker": current_blocker,
             "last_mutation": mutation_status,
             "task_timeout_sec": self.task_timeout_sec,
+            "resource": snapshot.get("resource") or {},
             "capabilities": {
                 "survival_policy": self._executor is not None,
                 "cpp_bridge": bool(cpp_status),
@@ -271,11 +296,20 @@ class BiosLoop:
 
         baseline_keys = (context.get("body_baselines", {}) or {}).get("keys", {})
         baseline_ready = bool(baseline_keys.get("idle_cpu_percent", {}).get("confidence", 0.0) >= CFG.growth_stability_threshold)
-        if self.use_llm and self._call_llm_raw is not None and len(self._llm_times) < self.max_llm_calls_per_hour:
-            prompt = growth_diagnosis_prompt(context)
-            raw = self._call_llm_raw(prompt, min(self.task_timeout_sec, 20.0))
-            self._llm_times.append(time.time())
-            self._state["llm_calls_today"] = int(self._state.get("llm_calls_today", 0)) + 1
+        max_llm_calls = self._max_llm_calls_for_context(context)
+        if self.use_llm and self._call_llm_raw is not None and len(self._llm_times) < max_llm_calls:
+            if self._resource_governor is not None:
+                llm_allowed, _reason = self._resource_governor.allow("bios_llm", estimated_cost="high")
+            else:
+                resource_mode = str((context.get("resource") or {}).get("mode") or "normal")
+                llm_allowed, _reason = (resource_mode not in {"critical", "recovery"}, "local_mode_check")
+            if llm_allowed:
+                prompt = self._trim_prompt(growth_diagnosis_prompt(context))
+                raw = self._call_llm_raw(prompt, min(self.task_timeout_sec, 20.0))
+                self._llm_times.append(time.time())
+                self._state["llm_calls_today"] = int(self._state.get("llm_calls_today", 0)) + 1
+            else:
+                raw = None
             task = self._parse_llm_task(raw)
             if task is not None:
                 return task
@@ -372,8 +406,19 @@ class BiosLoop:
 
     def _append_history(self, record: dict[str, Any]) -> None:
         self._history_path.parent.mkdir(parents=True, exist_ok=True)
+        compact_record = dict(record)
+        result = dict(record.get("result") or {})
+        internal_record = dict(result.get("internal_record") or {})
+        if internal_record:
+            internal_record["prompt"] = compact_prompt(str(internal_record.get("prompt") or ""), Path(self._data_root), kind="bios_prompt")
+            internal_record["llm_raw"] = compact_prompt(str(internal_record.get("llm_raw") or ""), Path(self._data_root), kind="bios_raw")
+            internal_record["evidence"] = compact_json_value(internal_record.get("evidence", {}))
+            result["internal_record"] = internal_record
+        result["evidence"] = compact_json_value(result.get("evidence", {}))
+        result["data"] = compact_json_value(result.get("data", {}))
+        compact_record["result"] = result
         with self._history_path.open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+            handle.write(json.dumps(compact_record, ensure_ascii=False) + "\n")
 
     def _recent_failures(self) -> list[dict[str, Any]]:
         if self._journal is None:
@@ -417,3 +462,25 @@ class BiosLoop:
         if not isinstance(payload, dict) or "task" not in payload:
             return None
         return payload
+
+    def _effective_interval_sec(self, snapshot: dict[str, Any] | None) -> float:
+        if self._resource_governor is None:
+            return self.interval_sec
+        return max(self.interval_sec, float(self._resource_governor.recommended_bios_interval_sec()))
+
+    def _max_llm_calls_for_context(self, context: dict[str, Any]) -> int:
+        resource_mode = str((context.get("resource") or {}).get("mode") or "normal")
+        if resource_mode == "reduced":
+            return max(0, CFG.bios_max_llm_calls_per_hour_reduced)
+        if resource_mode in {"critical", "recovery"}:
+            return max(0, CFG.bios_max_llm_calls_per_hour_critical)
+        return max(0, CFG.bios_max_llm_calls_per_hour_normal)
+
+    def _trim_prompt(self, prompt: str) -> str:
+        text = str(prompt or "")
+        limit = max(1200, int(CFG.internal_llm_max_prompt_chars))
+        if len(text) <= limit:
+            return text
+        head = max(400, int(limit * 0.65))
+        tail = max(200, limit - head - 32)
+        return text[:head] + "\n\n[context trimmed for resource budget]\n\n" + text[-tail:]

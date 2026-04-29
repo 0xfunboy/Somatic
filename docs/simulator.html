@@ -289,6 +289,10 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
     <div class="tb-badge"><div class="dot dot-gray" id="metabolic-dot"></div><span id="metabolic-mode">METAB: OBSERVE</span></div>
     <div class="tb-badge"><div class="dot dot-gray" id="reward-dot"></div><span id="reward-mode">REWARD: +0.00</span></div>
     <div class="tb-badge"><div class="dot dot-gray" id="vector-dot"></div><span id="vector-mode">VECTOR: UNKNOWN</span></div>
+    <div class="tb-badge"><div class="dot dot-gray" id="resource-dot"></div><span id="resource-mode">RESOURCE: NORMAL</span></div>
+    <div class="tb-badge"><div class="dot dot-gray" id="host-dot"></div><span id="host-mode">HOST: OK</span></div>
+    <div class="tb-badge"><div class="dot dot-gray" id="tick-dot"></div><span id="tick-mode">TICK: 0.0HZ</span></div>
+    <div class="tb-badge"><div class="dot dot-gray" id="budget-dot"></div><span id="budget-mode">BUDGET: OK</span></div>
   </div>
   <div class="tb-right">
     <button class="tb-btn active" id="btn-run" onclick="toggleRun()">
@@ -925,6 +929,19 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
         <div class="mind-row"><span class="mind-lbl">Missing</span><span class="mind-val" id="mp-missing" style="font-size:9px;line-height:1.4">--</span></div>
         <div class="mind-row"><span class="mind-lbl">Blocked By</span><span class="mind-val" id="mp-blocked" style="font-size:9px;line-height:1.4">--</span></div>
         <div class="mind-row"><span class="mind-lbl">Next Step</span><span class="mind-val" id="mp-next-step" style="font-size:9px;line-height:1.4">--</span></div>
+      </div>
+      <div class="mind-section">
+        <div class="mind-section-title">Resource Governor</div>
+        <div class="mind-row"><span class="mind-lbl">Mode</span><span class="mind-val" id="res-mode">--</span></div>
+        <div class="mind-row"><span class="mind-lbl">Host</span><span class="mind-val" id="res-host">--</span></div>
+        <div class="mind-row"><span class="mind-lbl">Tick</span><span class="mind-val" id="res-tick">--</span></div>
+        <div class="mind-row"><span class="mind-lbl">Budget</span><span class="mind-val" id="res-budget">--</span></div>
+        <div class="mind-row"><span class="mind-lbl">Lag</span><span class="mind-val" id="res-lag">--</span></div>
+        <div class="mind-row"><span class="mind-lbl">Slowest</span><span class="mind-val" id="res-slowest">--</span></div>
+        <div class="mind-row"><span class="mind-lbl">Full Hz</span><span class="mind-val" id="res-fullhz">--</span></div>
+        <div class="mind-row"><span class="mind-lbl">Projector Age</span><span class="mind-val" id="res-projector-age">--</span></div>
+        <div class="mind-row"><span class="mind-lbl">BIOS Interval</span><span class="mind-val" id="res-bios-interval">--</span></div>
+        <div class="mind-row"><span class="mind-lbl">Throttling</span><span class="mind-val" id="res-throttled" style="font-size:9px;line-height:1.4">--</span></div>
       </div>
       <div class="mind-section" id="mem-section">
         <div class="section-header">AUTOBIO MEMORY</div>
@@ -2709,6 +2726,15 @@ function applySnapshot(msg) {
   if (msg.metabolic && typeof msg.metabolic === 'object') {
     window._METABOLIC = msg.metabolic;
   }
+  if (msg.resource && typeof msg.resource === 'object') {
+    window._RESOURCE = msg.resource;
+  }
+  if (msg.performance && typeof msg.performance === 'object') {
+    window._PERFORMANCE = msg.performance;
+  }
+  if (msg.scheduler && typeof msg.scheduler === 'object') {
+    window._SCHEDULER = msg.scheduler;
+  }
   if (msg.reward && typeof msg.reward === 'object') {
     window._REWARD = msg.reward;
   }
@@ -2771,6 +2797,9 @@ function handleWSMessage(msg) {
   if (msg.type === 'init') {
     applySnapshot(msg);
     addConsoleEntry(msg.message || 'LSF server connected. Provider and projector state synchronized.');
+  } else if (msg.type === 'tick_light') {
+    if (!running) return;
+    applySnapshot(msg);
   } else if (msg.type === 'tick') {
     if (!running) return;
     applySnapshot(msg);
@@ -3007,6 +3036,9 @@ function updatePhase8Panel(msg) {
   const cpp = msg.cpp_bridge || {};
   const metabolic = msg.metabolic || {};
   const reward = msg.reward || {};
+  const resource = msg.resource || {};
+  const performance = msg.performance || {};
+  const runtimeBudget = msg.runtime_budget || {};
   const vectorState = msg.vector_state || {};
   const internalLoop = msg.internal_loop || {};
 
@@ -3032,6 +3064,18 @@ function updatePhase8Panel(msg) {
     : vectorState.mode_contribution === 'drift' ? 'yellow'
     : vectorState.mode_contribution === 'anomaly' ? 'red' : 'gray';
   setBadge('vector-dot', 'vector-mode', `VECTOR: ${vectorMode}`, vectorColor);
+  const resourceMode = String(resource.mode || 'normal').toUpperCase();
+  const resourceColor = resource.mode === 'normal' ? 'green'
+    : resource.mode === 'reduced' ? 'yellow'
+    : resource.mode === 'critical' ? 'red'
+    : resource.mode === 'recovery' ? 'orange' : 'gray';
+  setBadge('resource-dot', 'resource-mode', `RESOURCE: ${resourceMode}`, resourceColor);
+  const hostPressure = Number(resource.host_pressure || 0);
+  setBadge('host-dot', 'host-mode', `HOST: ${hostPressure >= 0.75 ? 'PRESSURE' : 'OK'}`, hostPressure >= 0.75 ? 'red' : hostPressure >= 0.55 ? 'yellow' : 'green');
+  const tickHz = Number(msg.hz || 0);
+  setBadge('tick-dot', 'tick-mode', `TICK: ${tickHz.toFixed(1)}HZ`, tickHz > 0 ? 'cyan' : 'gray');
+  const throttled = (resource.throttled_operations || []).length;
+  setBadge('budget-dot', 'budget-mode', `BUDGET: ${throttled ? 'THROTTLED' : 'OK'}`, throttled ? (resource.mode === 'critical' || resource.mode === 'recovery' ? 'red' : 'yellow') : 'green');
 
   const biosRunning = !!bios.running;
   setBadge('bios-dot', 'bios-mode', biosRunning ? `BIOS: RUNNING ${String(bios.last_task || '').toUpperCase()}` : `BIOS: ${bios.last_task ? 'LAST ' + String(bios.last_task).toUpperCase() : 'IDLE'}`, biosRunning ? 'green' : 'gray');
@@ -3075,6 +3119,17 @@ function updatePhase8Panel(msg) {
     ? 'REFLECTIONS ARE NOT DISTILLING LESSONS'
     : (autobiography.shallow ? 'SHALLOW MEMORY' : 'OK');
   setText('mem-warning', warning);
+  setText('res-mode', resourceMode);
+  setText('res-host', hostPressure >= 0.75 ? `PRESSURE ${hostPressure.toFixed(2)}` : `OK ${hostPressure.toFixed(2)}`);
+  setText('res-tick', `${tickHz.toFixed(1)}Hz / ${(runtimeBudget.recommended_tick_hz ?? resource.recommended_tick_hz ?? tickHz).toFixed ? (runtimeBudget.recommended_tick_hz ?? resource.recommended_tick_hz ?? tickHz).toFixed(1) : runtimeBudget.recommended_tick_hz ?? resource.recommended_tick_hz ?? '--'}Hz`);
+  setText('res-budget', throttled ? 'THROTTLED' : 'OK');
+  setText('res-lag', performance.event_loop_lag_ms != null ? `${Number(performance.event_loop_lag_ms).toFixed(1)}ms` : '—');
+  setText('res-slowest', performance.slowest_operation ? `${performance.slowest_operation} ${Number(performance.slowest_operation_ms || 0).toFixed(1)}ms` : '—');
+  const uiHz = resource.budget && resource.budget.ui_hz_max != null ? Number(resource.budget.ui_hz_max).toFixed(2) : '—';
+  setText('res-fullhz', uiHz === '—' ? '—' : `${uiHz}Hz`);
+  setText('res-projector-age', runtimeBudget.projector_age_sec != null ? `${Number(runtimeBudget.projector_age_sec).toFixed(1)}s` : '—');
+  setText('res-bios-interval', runtimeBudget.bios_interval_sec != null ? `${Math.round(Number(runtimeBudget.bios_interval_sec))}s` : '—');
+  setText('res-throttled', throttled ? (resource.throttled_operations || []).join(', ') : 'none');
 }
 
 // ─────────────────────────────────────────────

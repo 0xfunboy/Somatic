@@ -266,9 +266,22 @@ class MutationSandbox:
 
     def can_mutate(self, metabolic: dict, growth: dict, reward: dict) -> tuple[bool, list[str]]:
         blockers: list[str] = []
+        resource_mode = str(metabolic.get("resource_mode") or "normal").lower()
         calibrated_conf = float(
             metabolic.get("sensor_confidence_calibrated", metabolic.get("sensor_confidence", 0.0)) or 0.0
         )
+        if resource_mode != "normal":
+            blockers.append("resource_mode_not_normal")
+            if self._reward_engine is not None:
+                scored = self._reward_engine.score_event({"kind": "mutation_blocked_for_host_health"})
+                self._reward_engine.record_reward(
+                    "mutation_blocked_for_host_health",
+                    float(scored.get("value", 0.0) or 0.0),
+                    {
+                        "resource_mode": resource_mode,
+                        "host_pressure": float(metabolic.get("host_pressure", 0.0) or 0.0),
+                    },
+                )
         if calibrated_conf < 0.55:
             blockers.append("low_calibrated_sensor_confidence")
         if not metabolic.get("growth_allowed", False):

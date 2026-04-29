@@ -123,6 +123,11 @@ class MetabolicEngine:
                 "growth_pressure": 0.0,
                 "reproduction_pressure": 0.0,
                 "recovery_pressure": 0.0,
+                "host_pressure": 0.0,
+                "resource_mode": "normal",
+                "resource_throttle": False,
+                "growth_suspended_by_resource": False,
+                "mutation_suspended_by_resource": False,
                 "growth_allowed": False,
                 "recovery_required": False,
                 "stable_cycles": 0,
@@ -159,6 +164,7 @@ class MetabolicEngine:
         command_agency = context.get("command_agency") or snapshot.get("command_agency", {}) or {}
         capabilities = context.get("capabilities") or {}
         baselines = context.get("baselines") or snapshot.get("baselines", {}) or {}
+        resource_state = context.get("resource") or snapshot.get("resource", {}) or {}
 
         thermal_stress = _clamp01(derived.get("thermal_stress"))
         energy_stress = _clamp01(derived.get("energy_stress"))
@@ -256,12 +262,15 @@ class MetabolicEngine:
 
         reward_trend = float(reward_state.get("trend", reward_state.get("rolling_score", 0.0)) or 0.0)
         reward_support = _clamp01(0.5 + reward_trend)
+        host_pressure = _clamp01(resource_state.get("host_pressure", 0.0))
+        resource_mode = str(resource_state.get("mode") or "normal").lower()
+        resource_throttle = resource_mode != "normal" or host_pressure >= 0.55
         failed_commands = int(command_agency.get("failed", 0) or 0)
         successful_commands = int(command_agency.get("successful", 0) or 0)
         total_commands = max(1, failed_commands + successful_commands)
         failure_ratio = failed_commands / total_commands
         recent_failure_pressure = _clamp01(max(failure_ratio, max(0.0, -reward_trend)))
-        stress = round(max(thermal_stress, energy_stress, instability, memory_pressure, disk_pressure, vector_anomaly, recent_failure_pressure), 4)
+        stress = round(max(thermal_stress, energy_stress, instability, memory_pressure, disk_pressure, vector_anomaly, recent_failure_pressure, host_pressure), 4)
 
         stability = round(
             _avg([
@@ -276,10 +285,12 @@ class MetabolicEngine:
             4,
         )
         competence_gap = min(1.0, len(growth_state.get("missing_requirements", []) or []) / 8.0)
-        growth_pressure = round(_clamp01(stability * max(0.25, 0.25 + competence_gap) * max(0.25, reward_support)), 4)
+        growth_pressure = round(_clamp01(stability * max(0.25, 0.25 + competence_gap) * max(0.25, reward_support) * max(0.1, 1.0 - host_pressure)), 4)
         mutation_readiness = 1.0 if mutation_status.get("sandbox_root_exists") else 0.4
         reproduction_pressure = round(_clamp01(growth_pressure * self_integrity * mutation_readiness), 4)
-        recovery_pressure = round(_clamp01(max(stress, vector_anomaly) * 0.7 + recent_failure_pressure * 0.3), 4)
+        recovery_pressure = round(_clamp01(max(stress, vector_anomaly, host_pressure) * 0.7 + recent_failure_pressure * 0.3), 4)
+        growth_suspended_by_resource = resource_mode in {"reduced", "critical", "recovery"} or host_pressure >= 0.6
+        mutation_suspended_by_resource = resource_mode != "normal"
 
         stable_now = (
             stability >= self._growth_threshold
@@ -296,6 +307,8 @@ class MetabolicEngine:
             vector_anomaly=vector_anomaly,
             self_integrity=self_integrity,
             mutation_status=mutation_status,
+            host_pressure=host_pressure,
+            resource_mode=resource_mode,
         )
         growth_allowed, growth_blockers = self._compute_growth_allowed(
             stability=stability,
@@ -306,12 +319,20 @@ class MetabolicEngine:
             stable_cycles=stable_cycles,
             recovery_required=recovery_required,
             reward_state=reward_state,
+            resource_mode=resource_mode,
+            growth_suspended_by_resource=growth_suspended_by_resource,
         )
 
         mode_reasons: list[str] = []
         if recovery_required:
             mode = "recover"
             mode_reasons = recovery_reasons
+        elif growth_suspended_by_resource and resource_mode in {"critical", "recovery"}:
+            mode = "recover"
+            mode_reasons = ["host_resource_pressure"]
+        elif growth_suspended_by_resource:
+            mode = "stabilize"
+            mode_reasons = ["host_resource_pressure"]
         elif sensor_confidence_calibrated < 0.55:
             mode = "stabilize" if stress > 0.2 or stable_baseline_confidence < 0.55 else "observe"
             mode_reasons = ["calibrated_sensor_confidence_low"]
@@ -361,6 +382,11 @@ class MetabolicEngine:
             "growth_pressure": growth_pressure,
             "reproduction_pressure": reproduction_pressure,
             "recovery_pressure": recovery_pressure,
+            "host_pressure": round(host_pressure, 4),
+            "resource_mode": resource_mode,
+            "resource_throttle": bool(resource_throttle),
+            "growth_suspended_by_resource": bool(growth_suspended_by_resource),
+            "mutation_suspended_by_resource": bool(mutation_suspended_by_resource),
             "growth_allowed": bool(growth_allowed),
             "recovery_required": bool(recovery_required),
             "stable_cycles": stable_cycles,
@@ -443,8 +469,14 @@ class MetabolicEngine:
         stable_cycles: int,
         recovery_required: bool,
         reward_state: dict[str, Any],
+        resource_mode: str,
+        growth_suspended_by_resource: bool,
     ) -> tuple[bool, list[str]]:
         blockers: list[str] = []
+        if resource_mode in {"critical", "recovery"}:
+            blockers.append("host_resource_pressure")
+        elif growth_suspended_by_resource:
+            blockers.append("growth_suspended_by_resource")
         if recovery_required:
             blockers.append("recovery_required")
         if stability < self._growth_threshold:
@@ -470,8 +502,12 @@ class MetabolicEngine:
         vector_anomaly: float,
         self_integrity: float,
         mutation_status: dict[str, Any],
+        host_pressure: float,
+        resource_mode: str,
     ) -> tuple[bool, list[str]]:
         reasons: list[str] = []
+        if resource_mode in {"critical", "recovery"} or host_pressure >= 0.75:
+            reasons.append("host_resource_pressure")
         if stress > self._max_stress:
             reasons.append("stress_above_max")
         if vector_anomaly >= CFG.vector_drift_threshold:

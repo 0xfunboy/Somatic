@@ -31,6 +31,24 @@ def main() -> int:
         write_json(mind / "metabolic_state.json", {"mode": "recover", "stability": 0.31, "stress": 0.82, "self_integrity": 0.74, "growth_allowed": False, "recovery_required": True, "reasons": ["stress_above_max"], "raw_source_quality": 0.33, "sensor_confidence_calibrated": 0.58, "baseline_confidence": 0.77, "missing_sensor_classes": ["gpu", "battery"]})
         write_json(mind / "reward_state.json", {"rolling_score": 0.12, "trend": 0.03, "last_kind": "test_pass", "last_value": 0.15, "count": 4})
         write_json(mind / "mutation_state.json", {"last_blockers": ["low_calibrated_sensor_confidence", "growth_not_allowed", "recovery_required"]})
+        write_json(
+            mind / "resource_state.json",
+            {
+                "mode": "reduced",
+                "throttled_operations": ["full_payload_hz", "projector", "vector_interpreter", "mutation"],
+                "sample": {"cpu_percent": 62.0, "memory_percent": 48.0, "event_loop_lag_ms": 90.0},
+                "budget": {"tick_hz_max": 1.0, "ui_hz_max": 0.5},
+            },
+        )
+        write_json(
+            mind / "performance_state.json",
+            {
+                "operations": {"tick_total": {"avg_ms": 41.0, "latest_ms": 44.0, "max_ms": 56.0, "count": 7}},
+                "slowest_operation": "tick_total",
+                "slowest_operation_ms": 44.0,
+                "event_loop_lag_ms": 90.0,
+            },
+        )
         router = IntrospectionRouter(repo_root=root)
 
         failures += check("last bios prompt reads internal state", "PROMPT_X" in router.execute("show your last BIOS internal prompt")["text"])
@@ -38,6 +56,10 @@ def main() -> int:
         failures += check("metabolic vector reads metabolic state", '"mode": "recover"' in router.execute("what is your metabolic vector?")["text"])
         failures += check("reward trend reads reward state", '"rolling_score": 0.12' in router.execute("what is your reward trend?")["text"])
         failures += check("why not mutating reports calibrated blocker", "low_calibrated_sensor_confidence" in router.execute("why are you not mutating?")["text"])
+        failures += check("resource mode introspection reads governor state", '"mode": "reduced"' in router.execute("what is your resource mode?")["text"])
+        failures += check("throttling introspection explains slowed subsystems", "projector" in router.execute("what are you throttling?")["text"])
+        failures += check("performance profile introspection reads persisted profile", "tick_total" in router.execute("show performance profile")["text"])
+        failures += check("resource governor status introspection returns persisted status", '"tick_hz_max": 1.0' in router.execute("show resource governor status")["text"])
 
     with tempfile.TemporaryDirectory() as td:
         router = IntrospectionRouter(repo_root=Path(td))

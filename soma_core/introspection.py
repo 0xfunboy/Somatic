@@ -46,8 +46,8 @@ class IntrospectionRouter:
         if "last bios internal prompt" in low or "last internal prompt" in low:
             bios = _load_json(self._mind_root / "bios_state.json", {})
             state = _load_json(self._mind_root / "internal_loop_state.json", {})
-            prompt = str(bios.get("last_internal_prompt") or state.get("last_prompt") or "").strip()
-            return self._ok("introspection.last_bios_prompt", prompt or "No internal BIOS prompt has been persisted yet.", {"prompt": prompt})
+            prompt = bios.get("last_internal_prompt") or state.get("last_prompt") or {}
+            return self._ok("introspection.last_bios_prompt", self._render_prompt_ref(prompt) or "No internal BIOS prompt has been persisted yet.", {"prompt": prompt})
         if "last internal deepseek json" in low or "last deepseek json" in low or "last internal json" in low:
             state = _load_json(self._mind_root / "internal_loop_state.json", {})
             bios = _load_json(self._mind_root / "bios_state.json", {})
@@ -117,6 +117,70 @@ class IntrospectionRouter:
             if not blockers:
                 blockers = ["no_recorded_mutation_blocker"]
             return self._ok("introspection.mutation_blockers", f"Mutation blockers: {', '.join(blockers[:8])}.", {"blockers": blockers})
+        if "why are you slowing down" in low or "resource mode" in low or "show resource governor status" in low:
+            resource = _load_json(self._mind_root / "resource_state.json", {})
+            if not resource:
+                return self._ok("introspection.resource_mode", "No resource governor state has been persisted yet.", {})
+            return self._ok("introspection.resource_mode", json.dumps(resource, ensure_ascii=False, indent=2), resource)
+        if "what are you throttling" in low:
+            resource = _load_json(self._mind_root / "resource_state.json", {})
+            throttled = list(resource.get("throttled_operations") or [])
+            mode = str(resource.get("mode") or "unknown")
+            text = f"Resource mode {mode}. Throttling: {', '.join(throttled) if throttled else 'nothing right now'}."
+            return self._ok("introspection.resource_throttling", text, {"mode": mode, "throttled_operations": throttled})
+        if "what is your cpu budget" in low:
+            resource = _load_json(self._mind_root / "resource_state.json", {})
+            sample = resource.get("sample") or {}
+            budget = resource.get("budget") or {}
+            data = {
+                "mode": resource.get("mode"),
+                "cpu_percent": sample.get("cpu_percent"),
+                "memory_percent": sample.get("memory_percent"),
+                "tick_hz_max": budget.get("tick_hz_max"),
+                "ui_hz_max": budget.get("ui_hz_max"),
+            }
+            text = json.dumps(data, ensure_ascii=False, indent=2) if resource else "No resource budget has been persisted yet."
+            return self._ok("introspection.cpu_budget", text, data)
+        if "how much load are you causing" in low:
+            resource = _load_json(self._mind_root / "resource_state.json", {})
+            sample = resource.get("sample") or {}
+            data = {
+                "cpu_percent": sample.get("cpu_percent"),
+                "memory_percent": sample.get("memory_percent"),
+                "event_loop_lag_ms": sample.get("event_loop_lag_ms"),
+                "average_tick_duration_ms": sample.get("average_tick_duration_ms"),
+                "ui_broadcast_bytes_per_sec": sample.get("ui_broadcast_bytes_per_sec"),
+                "file_write_bytes_per_min": sample.get("file_write_bytes_per_min"),
+            }
+            text = json.dumps(data, ensure_ascii=False, indent=2) if resource else "No resource load sample has been persisted yet."
+            return self._ok("introspection.resource_load", text, data)
+        if "why did you pause growth" in low or "why did you pause or allow growth" in low:
+            metabolic = _load_json(self._mind_root / "metabolic_state.json", {})
+            if not metabolic:
+                return self._ok("introspection.growth_pause", "No metabolic state has been persisted yet.", {})
+            data = {
+                "growth_allowed": metabolic.get("growth_allowed"),
+                "resource_mode": metabolic.get("resource_mode"),
+                "growth_suspended_by_resource": metabolic.get("growth_suspended_by_resource"),
+                "reasons": metabolic.get("reasons", []),
+            }
+            text = json.dumps(data, ensure_ascii=False, indent=2)
+            return self._ok("introspection.growth_pause", text, data)
+        if "why did you pause mutation" in low:
+            metabolic = _load_json(self._mind_root / "metabolic_state.json", {})
+            mutation = _load_json(self._mind_root / "mutation_state.json", {})
+            data = {
+                "mutation_suspended_by_resource": metabolic.get("mutation_suspended_by_resource"),
+                "resource_mode": metabolic.get("resource_mode"),
+                "last_blockers": mutation.get("last_blockers", []),
+            }
+            text = json.dumps(data, ensure_ascii=False, indent=2)
+            return self._ok("introspection.mutation_pause", text, data)
+        if "show performance profile" in low:
+            perf = _load_json(self._mind_root / "performance_state.json", {})
+            if not perf:
+                return self._ok("introspection.performance", "No performance profile has been persisted yet.", {})
+            return self._ok("introspection.performance", json.dumps(perf, ensure_ascii=False, indent=2), perf)
         if "recovery or growth mode" in low or "metabolic mode" in low:
             metabolic = _load_json(self._mind_root / "metabolic_state.json", {})
             mode = metabolic.get("mode")
@@ -164,3 +228,8 @@ class IntrospectionRouter:
             "data": data,
             "source": "builtin",
         }
+
+    def _render_prompt_ref(self, prompt: Any) -> str:
+        if isinstance(prompt, dict):
+            return json.dumps(prompt, ensure_ascii=False, indent=2)
+        return str(prompt or "").strip()

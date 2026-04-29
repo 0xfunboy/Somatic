@@ -13,6 +13,7 @@ from soma_core.internal_prompts import (
     metabolic_recovery_planner_prompt,
     metabolic_stabilization_planner_prompt,
 )
+from soma_core.state_compaction import compact_json_value, compact_prompt, maybe_compact_json_state
 
 
 _REPO_ROOT = Path(__file__).parent.parent.resolve()
@@ -44,6 +45,7 @@ class InternalLoop:
         mutation: Any = None,
         autobiography: Any = None,
         experience: Any = None,
+        resource_governor: Any = None,
         data_root: Path | None = None,
     ) -> None:
         self._call_llm_raw = call_llm_raw
@@ -54,9 +56,12 @@ class InternalLoop:
         self._mutation = mutation
         self._autobiography = autobiography
         self._experience = experience
+        self._resource_governor = resource_governor
         self._data_root = Path(data_root or (_REPO_ROOT / "data" / "mind"))
         self._history_path = self._data_root / "internal_decisions.jsonl"
         self._state_path = self._data_root / "internal_loop_state.json"
+        if CFG.auto_compact_mind_state:
+            maybe_compact_json_state(self._state_path, apply=True)
         self._state = _load_json(
             self._state_path,
             {
@@ -65,8 +70,8 @@ class InternalLoop:
                 "invalid_json_count": 0,
                 "last_mode": "observe",
                 "last_prompt_type": "",
-                "last_prompt": "",
-                "last_raw": "",
+                "last_prompt": {},
+                "last_raw": {},
                 "last_parsed": {},
                 "last_parsed_fallback": {},
                 "last_action": {},
@@ -379,8 +384,17 @@ class InternalLoop:
         fallback: dict[str, Any],
     ) -> dict[str, Any]:
         decision_id = uuid.uuid4().hex[:12]
+        trimmed_prompt = self._trim_prompt(prompt)
+        prompt_was_trimmed = trimmed_prompt != prompt
         timeout_s = min(20.0, float(context.get("task_timeout_sec") or CFG.bios_task_timeout_sec))
-        raw = self._call_llm_raw(prompt, timeout_s) if self._call_llm_raw is not None else None
+        resource = context.get("resource") or {}
+        resource_mode = str(resource.get("mode") or (context.get("metabolic") or {}).get("resource_mode") or "normal")
+        if self._resource_governor is not None:
+            timeout_s = min(timeout_s, float(self._resource_governor.recommended_llm_timeout_sec()))
+            llm_allowed, _llm_reason = self._resource_governor.allow("internal_llm", estimated_cost="high")
+        else:
+            llm_allowed, _llm_reason = (resource_mode not in {"critical", "recovery"}, "local_mode_check")
+        raw = trimmed_prompt and self._call_llm_raw(trimmed_prompt, timeout_s) if (self._call_llm_raw is not None and llm_allowed) else None
         parsed = self.parse_llm_json(raw or "")
         invalid_json = bool(raw) and not parsed
         if invalid_json and self._reward is not None:
@@ -391,6 +405,12 @@ class InternalLoop:
             )
         else:
             invalid_event = {}
+        if prompt_was_trimmed and self._reward is not None:
+            self._record_scored_event("llm_prompt_too_large", {"mode": mode, "prompt_type": prompt_type, "chars": len(prompt)})
+        if raw and len(raw) > CFG.internal_llm_max_response_chars:
+            raw = raw[: CFG.internal_llm_max_response_chars]
+            if self._reward is not None:
+                self._record_scored_event("llm_response_too_large", {"mode": mode, "prompt_type": prompt_type})
 
         decision = parsed if parsed else dict(fallback)
         outcome = self.apply_internal_decision(decision, context)
@@ -399,7 +419,7 @@ class InternalLoop:
             "timestamp": time.time(),
             "mode": mode,
             "prompt_type": prompt_type,
-            "prompt": prompt,
+            "prompt": trimmed_prompt,
             "llm_raw": raw or "",
             "parsed": parsed or {},
             "parsed_fallback": decision if not parsed else {},
@@ -419,15 +439,15 @@ class InternalLoop:
                 "invalid_json_count": int(self._state.get("invalid_json_count", 0)) + (1 if invalid_json else 0),
                 "last_mode": mode,
                 "last_prompt_type": prompt_type,
-                "last_prompt": prompt,
-                "last_raw": raw or "",
+                "last_prompt": compact_prompt(trimmed_prompt, self._data_root, kind="internal_prompt"),
+                "last_raw": compact_prompt(raw or "", self._data_root, kind="internal_raw"),
                 "last_parsed": parsed or {},
                 "last_parsed_fallback": decision if not parsed else {},
                 "last_action": outcome.get("action_taken", {}),
-                "last_evidence": outcome.get("evidence", {}),
+                "last_evidence": compact_json_value(outcome.get("evidence", {})),
                 "last_reward": outcome.get("reward", invalid_event),
-                "last_memory_updates": outcome.get("memory_updates", []),
-                "last_growth_updates": outcome.get("growth_updates", []),
+                "last_memory_updates": compact_json_value(outcome.get("memory_updates", [])),
+                "last_growth_updates": compact_json_value(outcome.get("growth_updates", [])),
                 "last_next_task": outcome.get("next_task", ""),
                 "last_run_at": record["timestamp"],
                 "last_decision_id": decision_id,
@@ -533,8 +553,14 @@ class InternalLoop:
 
     def _append_history(self, record: dict[str, Any]) -> None:
         self._history_path.parent.mkdir(parents=True, exist_ok=True)
+        compact_record = dict(record)
+        compact_record["prompt"] = compact_prompt(str(record.get("prompt") or ""), self._data_root, kind="internal_prompt")
+        compact_record["llm_raw"] = compact_prompt(str(record.get("llm_raw") or ""), self._data_root, kind="internal_raw")
+        compact_record["evidence"] = compact_json_value(record.get("evidence", {}))
+        compact_record["memory_updates"] = compact_json_value(record.get("memory_updates", []))
+        compact_record["growth_updates"] = compact_json_value(record.get("growth_updates", []))
         with self._history_path.open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+            handle.write(json.dumps(compact_record, ensure_ascii=False) + "\n")
 
     def _record_scored_event(self, kind: str, evidence: dict[str, Any]) -> dict[str, Any]:
         if self._reward is None:
@@ -563,3 +589,12 @@ class InternalLoop:
             "growth_updates": growth_updates,
             "next_task": next_task,
         }
+
+    def _trim_prompt(self, prompt: str) -> str:
+        text = str(prompt or "")
+        limit = max(1200, int(CFG.internal_llm_max_prompt_chars))
+        if len(text) <= limit:
+            return text
+        head = max(400, int(limit * 0.65))
+        tail = max(200, limit - head - 32)
+        return text[:head] + "\n\n[context trimmed for resource budget]\n\n" + text[-tail:]

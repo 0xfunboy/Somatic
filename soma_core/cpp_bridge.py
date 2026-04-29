@@ -27,6 +27,8 @@ class CppBridge:
             "active": False,
             "status": "missing",
             "last_checked_at": 0.0,
+            "last_smoke_at": 0.0,
+            "last_projection_at": 0.0,
             "last_error": "",
         }
 
@@ -69,6 +71,7 @@ class CppBridge:
                 "smoke_ok": smoke_ok,
                 "status": "smoke_ok" if smoke_ok else "failed",
                 "last_error": "" if smoke_ok else (combined.strip()[:300] or f"exit={result.returncode}"),
+                "last_smoke_at": time.time(),
             })
             if "model" in combined.lower() and not smoke_ok:
                 self._status["status"] = "model_required"
@@ -86,6 +89,8 @@ class CppBridge:
             return status
         status["active"] = bool(status.get("smoke_ok"))
         status["status"] = "active" if status["active"] else status.get("status", "failed")
+        status["last_projection_at"] = time.time()
+        self._status["last_projection_at"] = status["last_projection_at"]
         return status
 
     def status(self) -> dict[str, Any]:

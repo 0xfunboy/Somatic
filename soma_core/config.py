@@ -53,7 +53,7 @@ class SomaConfig:
     capability_learning_enabled: bool = field(default_factory=lambda: _bool("SOMA_CAPABILITY_LEARNING", False))
     shell_exec_enabled: bool = field(default_factory=lambda: _bool("SOMA_SHELL_EXEC", False))
     self_modify_enabled: bool = field(default_factory=lambda: _bool("SOMA_SELF_MODIFY", False))
-    cns_pulse_enabled: bool = field(default_factory=lambda: _bool("SOMA_CNS_PULSE", False))
+    cns_pulse_enabled: bool = field(default_factory=lambda: _bool("SOMA_CNS_PULSE_ENABLED", _bool("SOMA_CNS_PULSE", False)))
 
     # ── survival envelope (only relevant when shell/autonomy is active) ───────
     package_mutation_enabled: bool = field(default_factory=lambda: _bool("SOMA_SYSTEM_PACKAGE_MUTATION", False))
@@ -70,6 +70,35 @@ class SomaConfig:
     mind_pulse_sec: float = field(default_factory=lambda: _float("SOMA_MIND_PULSE_SEC", 30.0))
     growth_eval_interval_s: float = field(default_factory=lambda: _float("SOMA_GROWTH_EVAL_INTERVAL_SEC", 120.0))
     autobiography_min_interval_s: float = field(default_factory=lambda: _float("SOMA_AUTOBIOGRAPHY_MIN_INTERVAL_SEC", 300.0))
+    tick_hz_max_normal: float = field(default_factory=lambda: _float("SOMA_TICK_HZ_MAX_NORMAL", 2.0))
+    tick_hz_max_reduced: float = field(default_factory=lambda: _float("SOMA_TICK_HZ_MAX_REDUCED", 1.0))
+    tick_hz_max_critical: float = field(default_factory=lambda: _float("SOMA_TICK_HZ_MAX_CRITICAL", 0.5))
+    tick_hz_max_recovery: float = field(default_factory=lambda: _float("SOMA_TICK_HZ_MAX_RECOVERY", 0.2))
+    operator_can_override_resource_hz: bool = field(default_factory=lambda: _bool("SOMA_OPERATOR_CAN_OVERRIDE_RESOURCE_HZ", False))
+    ui_full_payload_hz: float = field(default_factory=lambda: _float("SOMA_UI_FULL_PAYLOAD_HZ", 0.5))
+    ui_light_tick_hz: float = field(default_factory=lambda: _float("SOMA_UI_LIGHT_TICK_HZ", 2.0))
+    ui_max_broadcast_bytes_per_sec: int = field(default_factory=lambda: int(_float("SOMA_UI_MAX_BROADCAST_BYTES_PER_SEC", 250000.0)))
+    cns_pulse_interval_sec: float = field(default_factory=lambda: _float("SOMA_CNS_PULSE_INTERVAL_SEC", 10.0))
+    discovery_interval_sec: float = field(default_factory=lambda: _float("SOMA_DISCOVERY_INTERVAL_SEC", 600.0))
+
+    # ── resource governor ─────────────────────────────────────────────────────
+    resource_governor: bool = field(default_factory=lambda: _bool("SOMA_RESOURCE_GOVERNOR", True))
+    resource_mode_default: str = field(default_factory=lambda: _str("SOMA_RESOURCE_MODE_DEFAULT", "normal").lower())
+    host_cpu_reduced_percent: float = field(default_factory=lambda: _float("SOMA_HOST_CPU_REDUCED_PERCENT", 55.0))
+    host_cpu_critical_percent: float = field(default_factory=lambda: _float("SOMA_HOST_CPU_CRITICAL_PERCENT", 75.0))
+    host_mem_reduced_percent: float = field(default_factory=lambda: _float("SOMA_HOST_MEM_REDUCED_PERCENT", 70.0))
+    host_mem_critical_percent: float = field(default_factory=lambda: _float("SOMA_HOST_MEM_CRITICAL_PERCENT", 85.0))
+    host_swap_critical_percent: float = field(default_factory=lambda: _float("SOMA_HOST_SWAP_CRITICAL_PERCENT", 20.0))
+    host_temp_reduced_c: float = field(default_factory=lambda: _float("SOMA_HOST_TEMP_REDUCED_C", 70.0))
+    host_temp_critical_c: float = field(default_factory=lambda: _float("SOMA_HOST_TEMP_CRITICAL_C", 82.0))
+    event_loop_lag_reduced_ms: float = field(default_factory=lambda: _float("SOMA_EVENT_LOOP_LAG_REDUCED_MS", 250.0))
+    event_loop_lag_critical_ms: float = field(default_factory=lambda: _float("SOMA_EVENT_LOOP_LAG_CRITICAL_MS", 1000.0))
+    tick_duration_reduced_ms: float = field(default_factory=lambda: _float("SOMA_TICK_DURATION_REDUCED_MS", 150.0))
+    tick_duration_critical_ms: float = field(default_factory=lambda: _float("SOMA_TICK_DURATION_CRITICAL_MS", 500.0))
+    resource_recovery_stable_sec: float = field(default_factory=lambda: _float("SOMA_RESOURCE_RECOVERY_STABLE_SEC", 120.0))
+    resource_history_interval_sec: float = field(default_factory=lambda: _float("SOMA_RESOURCE_HISTORY_INTERVAL_SEC", 300.0))
+    resource_write_state_interval_sec: float = field(default_factory=lambda: _float("SOMA_WRITE_STATE_INTERVAL_SEC", 30.0))
+    resource_max_state_bytes: int = field(default_factory=lambda: int(_float("SOMA_MAX_STATE_BYTES", 65536.0)))
 
     # ── trace persistence ─────────────────────────────────────────────────────
     trace_persistence: str = field(default_factory=lambda: _str("SOMA_TRACE_PERSISTENCE", "important"))
@@ -117,6 +146,15 @@ class SomaConfig:
     bios_task_timeout_sec: float = field(default_factory=lambda: _float("SOMA_BIOS_TASK_TIMEOUT_SEC", 60.0))
     bios_write_memory: bool = field(default_factory=lambda: _bool("SOMA_BIOS_WRITE_MEMORY", True))
     bios_mutation_proposal_interval_sec: float = field(default_factory=lambda: _float("SOMA_BIOS_MUTATION_PROPOSAL_INTERVAL_SEC", 1800.0))
+    bios_interval_sec_normal: float = field(default_factory=lambda: _float("SOMA_BIOS_INTERVAL_SEC_NORMAL", 600.0))
+    bios_interval_sec_reduced: float = field(default_factory=lambda: _float("SOMA_BIOS_INTERVAL_SEC_REDUCED", 1800.0))
+    bios_interval_sec_critical: float = field(default_factory=lambda: _float("SOMA_BIOS_INTERVAL_SEC_CRITICAL", 3600.0))
+    bios_interval_sec_recovery: float = field(default_factory=lambda: _float("SOMA_BIOS_INTERVAL_SEC_RECOVERY", 3600.0))
+    bios_max_llm_calls_per_hour_normal: int = field(default_factory=lambda: int(_float("SOMA_BIOS_MAX_LLM_CALLS_PER_HOUR_NORMAL", 4.0)))
+    bios_max_llm_calls_per_hour_reduced: int = field(default_factory=lambda: int(_float("SOMA_BIOS_MAX_LLM_CALLS_PER_HOUR_REDUCED", 1.0)))
+    bios_max_llm_calls_per_hour_critical: int = field(default_factory=lambda: int(_float("SOMA_BIOS_MAX_LLM_CALLS_PER_HOUR_CRITICAL", 0.0)))
+    bios_yield_when_user_active: bool = field(default_factory=lambda: _bool("SOMA_BIOS_YIELD_WHEN_USER_ACTIVE", True))
+    user_active_window_sec: float = field(default_factory=lambda: _float("SOMA_USER_ACTIVE_WINDOW_SEC", 120.0))
 
     # ── Phase 9: metabolic growth ────────────────────────────────────────────
     metabolic_engine: bool = field(default_factory=lambda: _bool("SOMA_METABOLIC_ENGINE", True))
@@ -155,10 +193,19 @@ class SomaConfig:
     internal_decision_history_max: int = field(default_factory=lambda: int(_float("SOMA_INTERNAL_DECISION_HISTORY_MAX", 1000.0)))
     internal_llm_json_required: bool = field(default_factory=lambda: _bool("SOMA_INTERNAL_LLM_JSON_REQUIRED", True))
     internal_invalid_json_penalty: float = field(default_factory=lambda: _float("SOMA_INTERNAL_INVALID_JSON_PENALTY", -0.05))
+    internal_llm_max_prompt_chars: int = field(default_factory=lambda: int(_float("SOMA_INTERNAL_LLM_MAX_PROMPT_CHARS", 6000.0)))
+    internal_llm_max_response_chars: int = field(default_factory=lambda: int(_float("SOMA_INTERNAL_LLM_MAX_RESPONSE_CHARS", 4000.0)))
     vector_interpreter: bool = field(default_factory=lambda: _bool("SOMA_VECTOR_INTERPRETER", True))
     vector_baseline_min_samples: int = field(default_factory=lambda: int(_float("SOMA_VECTOR_BASELINE_MIN_SAMPLES", 100.0)))
     vector_drift_threshold: float = field(default_factory=lambda: _float("SOMA_VECTOR_DRIFT_THRESHOLD", 0.35))
     vector_cpp_mismatch_threshold: float = field(default_factory=lambda: _float("SOMA_VECTOR_CPP_MISMATCH_THRESHOLD", 0.20))
+    projector_hz_normal: float = field(default_factory=lambda: _float("SOMA_PROJECTOR_HZ_NORMAL", 1.0))
+    projector_hz_reduced: float = field(default_factory=lambda: _float("SOMA_PROJECTOR_HZ_REDUCED", 0.2))
+    projector_hz_critical: float = field(default_factory=lambda: _float("SOMA_PROJECTOR_HZ_CRITICAL", 0.05))
+    projector_hz_recovery: float = field(default_factory=lambda: _float("SOMA_PROJECTOR_HZ_RECOVERY", 0.02))
+    vector_interpreter_hz: float = field(default_factory=lambda: _float("SOMA_VECTOR_INTERPRETER_HZ", 0.2))
+    cpp_projection_hz: float = field(default_factory=lambda: _float("SOMA_CPP_PROJECTION_HZ", 0.02))
+    cpp_smoke_test_interval_sec: float = field(default_factory=lambda: _float("SOMA_CPP_SMOKE_TEST_INTERVAL_SEC", 3600.0))
 
     # ── mutation sandbox ──────────────────────────────────────────────────────
     mutation_sandbox: bool = field(default_factory=lambda: _bool("SOMA_MUTATION_SANDBOX", True))
@@ -179,6 +226,10 @@ class SomaConfig:
     cpp_smoke_test_on_start: bool = field(default_factory=lambda: _bool("SOMA_CPP_SMOKE_TEST_ON_START", True))
     cpp_use_for_projection: bool = field(default_factory=lambda: _bool("SOMA_CPP_USE_FOR_PROJECTION", False))
     cpp_llama_cpp_root: str = field(default_factory=lambda: _str("SOMA_CPP_LLAMA_CPP_ROOT", "/home/funboy/llama.cpp"))
+
+    # ── state compaction ──────────────────────────────────────────────────────
+    auto_compact_mind_state: bool = field(default_factory=lambda: _bool("SOMA_AUTO_COMPACT_MIND_STATE", True))
+    mind_state_max_bytes: int = field(default_factory=lambda: int(_float("SOMA_MIND_STATE_MAX_BYTES", 262144.0)))
 
     @property
     def any_exec_active(self) -> bool:

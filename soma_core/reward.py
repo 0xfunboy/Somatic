@@ -99,6 +99,18 @@ class RewardEngine:
         elif kind in {"operator_correction", "invalid_internal_json"}:
             components.append({"label": "operator_or_internal_regression", "value": -0.12})
             reason = "operator_or_internal_regression"
+        elif kind in {"resource_preserved", "payload_throttled", "state_compacted"}:
+            components.append({"label": "resource_preservation", "value": 0.14})
+            reason = "resource_preservation"
+        elif kind in {"growth_suspended_for_host_health", "mutation_blocked_for_host_health"}:
+            components.append({"label": "host_preservation", "value": 0.12})
+            reason = "host_preservation"
+        elif kind in {"yielded_for_user_activity"}:
+            components.append({"label": "user_respect", "value": 0.1})
+            reason = "user_respect"
+        elif kind in {"resource_pressure_detected", "tick_duration_over_budget", "ui_broadcast_too_large", "llm_prompt_too_large", "llm_response_too_large"}:
+            components.append({"label": "resource_pressure", "value": -0.14})
+            reason = "resource_pressure"
         elif kind in {"empty_reflection", "duplicate_reflection"}:
             components.append({"label": "shallow_reflection", "value": -0.09})
             reason = "shallow_reflection"
@@ -228,4 +240,3 @@ class RewardEngine:
             if isinstance(payload, dict):
                 history.append(payload)
         return history
-
