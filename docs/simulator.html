@@ -191,6 +191,11 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
 .msg-meta{font-size:9px;color:var(--text3);letter-spacing:.06em}
 .msg-state-tag{font-size:9px;color:var(--purple2);margin-bottom:2px}
 .msg-inline-tag{color:var(--text3);font-size:9px;margin-left:6px}
+.msg-radio-prompt .msg-state-tag{color:var(--cyan)}
+.msg-radio-raw .msg-state-tag{color:var(--purple2)}
+.msg-radio-decision .msg-state-tag{color:var(--green)}
+.msg-radio-evidence .msg-state-tag{color:var(--yellow)}
+.msg-hidden-toggle{display:none}
 .typing-indicator{display:flex;align-items:center;gap:4px;padding:9px 13px;background:rgba(112,64,232,.08);border:1px solid rgba(112,64,232,.2);border-radius:6px;align-self:flex-start}
 .typing-dot{width:5px;height:5px;border-radius:50%;background:var(--purple2);animation:tdot 1.2s infinite}
 .typing-dot:nth-child(2){animation-delay:.2s}
@@ -201,6 +206,10 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
 #chat-core-status.server{color:var(--cyan);background:rgba(0,207,255,.06)}
 #chat-core-status.fallback{color:var(--yellow);background:rgba(234,179,8,.08)}
 #chat-core-status.offline{color:var(--orange);background:rgba(249,115,22,.08)}
+.chat-controls{display:flex;flex-wrap:wrap;gap:8px;padding:8px 12px;border-bottom:1px solid var(--border2);background:rgba(7,24,40,.82);flex-shrink:0}
+.chat-toggle{border:1px solid var(--border);background:rgba(0,207,255,.03);color:var(--text2);font-family:var(--head);font-size:9px;letter-spacing:.1em;text-transform:uppercase;border-radius:4px;padding:6px 8px;cursor:pointer}
+.chat-toggle.active{color:var(--cyan);border-color:rgba(0,207,255,.28);background:rgba(0,207,255,.10)}
+#chat-controls-note{font-size:9px;color:var(--text3);letter-spacing:.06em;align-self:center}
 #chat-input-area{border-top:1px solid var(--border);padding:10px 12px;display:flex;gap:8px;align-items:center;flex-shrink:0;background:var(--bg2)}
 #chat-input{flex:1;background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:8px 12px;font-family:var(--mono);font-size:12px;color:var(--text);outline:none;resize:none;height:36px;line-height:1.4;transition:border-color .15s}
 #chat-input:focus{border-color:rgba(0,207,255,.4)}
@@ -943,6 +952,19 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
         <div class="mind-row"><span class="mind-lbl">BIOS Interval</span><span class="mind-val" id="res-bios-interval">--</span></div>
         <div class="mind-row"><span class="mind-lbl">Throttling</span><span class="mind-val" id="res-throttled" style="font-size:9px;line-height:1.4">--</span></div>
       </div>
+      <div class="mind-section">
+        <div class="mind-section-title">V10 Status</div>
+        <div class="mind-row"><span class="mind-lbl">Frontend Merge</span><span class="mind-val" id="v10-merge">--</span></div>
+        <div class="mind-row"><span class="mind-lbl">Inner Radio</span><span class="mind-val" id="v10-radio">--</span></div>
+        <div class="mind-row"><span class="mind-lbl">Last Event</span><span class="mind-val" id="v10-last-event">--</span></div>
+        <div class="mind-row"><span class="mind-lbl">Last Prompt</span><span class="mind-val" id="v10-last-prompt">--</span></div>
+        <div class="mind-row"><span class="mind-lbl">Last JSON</span><span class="mind-val" id="v10-last-json">--</span></div>
+        <div class="mind-row"><span class="mind-lbl">Last Evidence</span><span class="mind-val" id="v10-last-evidence" style="font-size:9px;line-height:1.4">--</span></div>
+        <div class="mind-row"><span class="mind-lbl">Payload</span><span class="mind-val" id="v10-payload">--</span></div>
+        <div class="mind-row"><span class="mind-lbl">Speak</span><span class="mind-val" id="v10-speak">--</span></div>
+        <div class="mind-row"><span class="mind-lbl">State Files</span><span class="mind-val" id="v10-state-files">--</span></div>
+        <div class="mind-row"><span class="mind-lbl">Warning</span><span class="mind-val" id="v10-warning" style="font-size:9px;line-height:1.4">--</span></div>
+      </div>
       <div class="mind-section" id="mem-section">
         <div class="section-header">AUTOBIO MEMORY</div>
         <div class="kv-row"><span class="kv-label">stage</span><span class="kv-val" id="mem-stage">—</span></div>
@@ -965,6 +987,14 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
       <span class="panel-sub" id="chat-panel-status">DIRECT + INTERNAL</span>
     </div>
     <div id="chat-core-status" class="offline">CHAT CORE: LOCAL FALLBACK (BACKEND OFFLINE)</div>
+    <div class="chat-controls">
+      <button class="chat-toggle" id="toggle-show-internal" onclick="toggleInternalFeed()">SHOW INTERNAL</button>
+      <button class="chat-toggle" id="toggle-show-prompts" onclick="togglePromptFeed()">SHOW PROMPTS</button>
+      <button class="chat-toggle" id="toggle-show-raw" onclick="toggleRawFeed()">SHOW RAW</button>
+      <button class="chat-toggle" id="toggle-auto-scroll" onclick="toggleAutoScroll()">AUTO-SCROLL</button>
+      <button class="chat-toggle" id="toggle-speak" onclick="toggleSpeakInternal()">SPEAK</button>
+      <span id="chat-controls-note">internal radio is preview-only and resource-safe</span>
+    </div>
     <div id="chat-messages">
       <div class="msg msg-entity msg-entity-direct">
         <div class="msg-state-tag">ENTITY // REPLY</div>
@@ -1052,6 +1082,158 @@ const SYSTEM = {
   ac_online:null,
   battery_plugged:null,
 };
+
+window._LAST_FULL_SNAPSHOT = window._LAST_FULL_SNAPSHOT || {};
+window._LAST_LIGHT_TICK = window._LAST_LIGHT_TICK || {};
+window._RESOURCE = window._RESOURCE || {};
+window._METABOLIC = window._METABOLIC || {};
+window._PERFORMANCE = window._PERFORMANCE || {};
+window._REWARD = window._REWARD || {};
+window._VECTOR_STATE = window._VECTOR_STATE || {};
+window._INTERNAL_LOOP = window._INTERNAL_LOOP || {};
+window._AUTOBIO = window._AUTOBIO || {};
+window._MUTATION = window._MUTATION || {};
+window._V10_STATUS = window._V10_STATUS || {};
+
+const SPEAK_MAX_QUEUE = 5;
+let _speechQueue = [];
+
+function isDefined(v) {
+  return v !== undefined && v !== null && !(typeof v === 'number' && Number.isNaN(v));
+}
+
+function assignDefined(target, source, keys) {
+  if (!target || !source) return;
+  keys.forEach(k => {
+    if (isDefined(source[k])) target[k] = source[k];
+  });
+}
+
+function deepMerge(target, source) {
+  if (!source || typeof source !== 'object') return Array.isArray(target) ? [...target] : { ...(target || {}) };
+  const out = Array.isArray(target) ? [...target] : { ...(target || {}) };
+  Object.entries(source).forEach(([k, v]) => {
+    if (v && typeof v === 'object' && !Array.isArray(v)) {
+      out[k] = deepMerge(out[k] || {}, v);
+    } else if (isDefined(v)) {
+      out[k] = v;
+    }
+  });
+  return out;
+}
+
+function localFlag(key, fallback) {
+  const raw = localStorage.getItem(key);
+  if (raw === null) return fallback;
+  return raw === '1';
+}
+
+function setLocalFlag(key, value) {
+  localStorage.setItem(key, value ? '1' : '0');
+}
+
+function getShowInternalEnabled() {
+  return localFlag('soma_show_internal', true);
+}
+
+function getShowPromptsEnabled() {
+  return localFlag('soma_show_prompts', true);
+}
+
+function getShowRawEnabled() {
+  return localFlag('soma_show_raw', false);
+}
+
+function getAutoScrollEnabled() {
+  return localFlag('soma_auto_scroll_internal', true);
+}
+
+function getSpeakEnabled() {
+  return localFlag('soma_speak_internal', false);
+}
+
+function updateInternalToggleButtons() {
+  const toggle = (id, enabled, label) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.classList.toggle('active', enabled);
+    el.textContent = `${label}: ${enabled ? 'ON' : 'OFF'}`;
+  };
+  toggle('toggle-show-internal', getShowInternalEnabled(), 'SHOW INTERNAL');
+  toggle('toggle-show-prompts', getShowPromptsEnabled(), 'SHOW PROMPTS');
+  toggle('toggle-show-raw', getShowRawEnabled(), 'SHOW RAW');
+  toggle('toggle-auto-scroll', getAutoScrollEnabled(), 'AUTO-SCROLL');
+  toggle('toggle-speak', getSpeakEnabled(), 'SPEAK');
+}
+
+function applyInternalVisibilityFilters() {
+  document.querySelectorAll('.msg-internal').forEach(node => {
+    const isPrompt = node.dataset.innerType === 'prompt';
+    const isRaw = node.dataset.innerType === 'raw';
+    const hidden = (!getShowInternalEnabled())
+      || (isPrompt && !getShowPromptsEnabled())
+      || (isRaw && !getShowRawEnabled());
+    node.classList.toggle('msg-hidden-toggle', hidden);
+  });
+}
+
+function toggleInternalFeed() {
+  setLocalFlag('soma_show_internal', !getShowInternalEnabled());
+  updateInternalToggleButtons();
+  applyInternalVisibilityFilters();
+  updateV10StatusPanel();
+}
+
+function togglePromptFeed() {
+  setLocalFlag('soma_show_prompts', !getShowPromptsEnabled());
+  updateInternalToggleButtons();
+  applyInternalVisibilityFilters();
+}
+
+function toggleRawFeed() {
+  setLocalFlag('soma_show_raw', !getShowRawEnabled());
+  updateInternalToggleButtons();
+  applyInternalVisibilityFilters();
+}
+
+function toggleAutoScroll() {
+  setLocalFlag('soma_auto_scroll_internal', !getAutoScrollEnabled());
+  updateInternalToggleButtons();
+}
+
+function toggleSpeakInternal() {
+  setLocalFlag('soma_speak_internal', !getSpeakEnabled());
+  updateInternalToggleButtons();
+  updateV10StatusPanel();
+}
+
+function maybeScrollFeed() {
+  const cm = document.getElementById('chat-messages');
+  if (cm && getAutoScrollEnabled()) cm.scrollTop = cm.scrollHeight;
+}
+
+function speakSoma(text, kind) {
+  if (!window.speechSynthesis) return;
+  if (!getSpeakEnabled()) return;
+  const clean = String(text || '').replace(/\s+/g, ' ').slice(0, 500).trim();
+  if (!clean) return;
+  if (_speechQueue.length >= SPEAK_MAX_QUEUE) {
+    window.speechSynthesis.cancel();
+    _speechQueue = [];
+  }
+  const u = new SpeechSynthesisUtterance(clean);
+  u.rate = 1.0;
+  u.pitch = kind === 'prompt' ? 0.85 : kind === 'decision' ? 1.0 : 0.95;
+  u.volume = 0.8;
+  const token = `${Date.now()}-${Math.random()}`;
+  _speechQueue.push(token);
+  const clearToken = () => {
+    _speechQueue = _speechQueue.filter(item => item !== token);
+  };
+  u.onend = clearToken;
+  u.onerror = clearToken;
+  window.speechSynthesis.speak(u);
+}
 
 const avatarState = {
   provider:'mock',
@@ -1374,9 +1556,10 @@ function renderSensors() {
   warn.style.display = S.voltage < 10.5 ? 'block' : 'none';
 
   // Current bar
-  const currPct = clamp(S.current_ma / 6000, 0, 1)*100;
+  const currentMa = isDefined(S.current_ma) ? Number(S.current_ma) : null;
+  const currPct = clamp((currentMa ?? 0) / 6000, 0, 1)*100;
   document.getElementById('curr-fill').style.width = currPct+'%';
-  document.getElementById('curr-val').textContent = Math.round(S.current_ma)+'mA';
+  document.getElementById('curr-val').textContent = currentMa === null ? '--' : Math.round(currentMa)+'mA';
 
   // Temp bars
   function setBar(id, val, maxV) {
@@ -1650,17 +1833,18 @@ function renderTracePane() {
 
 // Truthful status bar
 function updateTruthfulStatusBar(msg) {
-  const provider = msg.provider || {};
-  const projector = msg.projector || {};
-  const llm = msg.llm || {};
-  const mind = msg.mind || window._MIND || {};
+  const full = window._LAST_FULL_SNAPSHOT || {};
+  const provider = (msg.provider && typeof msg.provider === 'object') ? msg.provider : (full.provider || {});
+  const projector = (msg.projector && typeof msg.projector === 'object') ? msg.projector : (full.projector || {});
+  const llm = (msg.llm && typeof msg.llm === 'object') ? msg.llm : (full.llm || {});
+  const mind = msg.mind || full.mind || window._MIND || {};
 
   // Sensor provider
   const hwEl = document.getElementById('hw-mode');
   const hwDot = document.getElementById('hw-dot');
-  if (hwEl) {
+  if (hwEl && provider && Object.keys(provider).length) {
     const isReal = !!provider.is_real;
-    const pname = (provider.name || 'mock').toUpperCase();
+    const pname = (provider.name || avatarState.provider || 'unknown').toUpperCase();
     const quality = provider.source_quality != null ? ` Q${Number(provider.source_quality).toFixed(2)}` : '';
     hwEl.textContent = isReal ? `SENSOR: REAL [${pname}]${quality}` : `SENSOR: MOCK`;
     if (hwDot) hwDot.className = `dot ${isReal ? 'dot-green' : 'dot-yellow'}`;
@@ -1669,8 +1853,8 @@ function updateTruthfulStatusBar(msg) {
   // Projector
   const projEl = document.getElementById('ws-mode');
   const projDot = document.getElementById('ws-dot');
-  if (projEl && projector) {
-    const pmode = (projector.mode || 'off').toUpperCase();
+  if (projEl && projector && Object.keys(projector).length) {
+    const pmode = (projector.mode || avatarState.projectorMode || 'off').toUpperCase();
     const available = !!projector.available;
     projEl.textContent = available ? `PROJ: ${pmode === 'TORCHSCRIPT' ? 'ACTIVE' : pmode}` : 'PROJ: FALLBACK';
     if (projDot) projDot.className = `dot ${available && pmode === 'TORCHSCRIPT' ? 'dot-green' : available ? 'dot-yellow' : 'dot-red'}`;
@@ -1679,8 +1863,8 @@ function updateTruthfulStatusBar(msg) {
   // LLM
   const llmEl = document.getElementById('proj-mode');
   const llmDot = document.getElementById('proj-dot');
-  if (llmEl && llm) {
-    const lmode = (llm.mode || 'off').toUpperCase();
+  if (llmEl && llm && Object.keys(llm).length) {
+    const lmode = (llm.mode || avatarState.llmMode || 'off').toUpperCase();
     const available = !!llm.available;
     let label, dotClass;
     if (available && lmode === 'DEEPSEEK') { label = 'LLM: DEEPSEEK'; dotClass = 'dot-green'; }
@@ -2452,6 +2636,7 @@ function appendMsg(role, text, urgency, llmSource) {
       <div class="msg-meta">${ts}</div>`;
   }
   insertFeedEntry(div);
+  if (role === 'entity') speakSoma(text, 'reply');
   return div;
 }
 
@@ -2461,10 +2646,10 @@ function insertFeedEntry(node) {
   if (!cm) return;
   if (typing) cm.insertBefore(node, typing);
   else cm.appendChild(node);
-  cm.scrollTop = cm.scrollHeight;
+  maybeScrollFeed();
 }
 
-function appendInternalMsg(source, text, purpose, field) {
+function appendInternalMsg(source, text, purpose, field, options = {}) {
   const ts = new Date().toTimeString().slice(0,8);
   const div = document.createElement('div');
   const isEntity = source === 'entity';
@@ -2474,12 +2659,15 @@ function appendInternalMsg(source, text, purpose, field) {
     ? `<span class="ds-purpose-badge ${purposeClass}">${escHtml(String(purpose).replace('_',' '))}</span>`
     : '';
   const fieldTag = field ? `<span class="msg-inline-tag">[${escHtml(field)}]</span>` : '';
-  div.className = `msg msg-internal ${isEntity ? 'msg-internal-entity' : 'msg-internal-deepseek'}`;
+  div.className = `msg msg-internal ${isEntity ? 'msg-internal-entity' : 'msg-internal-deepseek'} ${options.extraClass || ''}`.trim();
+  if (options.innerType) div.dataset.innerType = options.innerType;
   div.innerHTML = `
-    <div class="msg-state-tag">${isEntity ? 'ENTITY // INTERNAL' : 'DEEPSEEK // INTERNAL'}${purposeBadge}${fieldTag}</div>
+    <div class="msg-state-tag">${options.label || (isEntity ? 'ENTITY // INTERNAL' : 'DEEPSEEK // INTERNAL')}${purposeBadge}${fieldTag}</div>
     <div class="msg-bubble">${safeText}</div>
     <div class="msg-meta">${ts}</div>`;
   insertFeedEntry(div);
+  applyInternalVisibilityFilters();
+  if (options.speakText) speakSoma(options.speakText, options.speakKind || 'event');
   return div;
 }
 
@@ -2662,7 +2850,115 @@ function setWsStatus(connected) {
   updateChatCoreStatus();
 }
 
-function applySnapshot(msg) {
+function rememberFullSnapshot(msg) {
+  window._LAST_FULL_SNAPSHOT = deepMerge(window._LAST_FULL_SNAPSHOT || {}, msg || {});
+  return window._LAST_FULL_SNAPSHOT;
+}
+
+function updateV10StatusPanel(msg = {}) {
+  const full = window._LAST_FULL_SNAPSHOT || {};
+  const snapshotStatus = msg.v10_status || full.v10_status || {};
+  const merged = deepMerge(window._V10_STATUS || {}, snapshotStatus);
+  const internalLoop = full.internal_loop || window._INTERNAL_LOOP || {};
+  const stateFiles = merged.state_files || {};
+  const sizes = stateFiles.sizes || {};
+  const age = isDefined(merged.last_internal_event_at)
+    ? Math.max(0, (Date.now() / 1000) - Number(merged.last_internal_event_at))
+    : merged.last_internal_event_age_sec;
+  const lastJson = merged.last_json || (internalLoop.last_parsed && Object.keys(internalLoop.last_parsed).length ? 'valid' : internalLoop.last_fallback ? 'fallback' : 'none');
+  const lastPrompt = merged.last_prompt || internalLoop.last_prompt_type || '--';
+  const speak = getSpeakEnabled() ? 'ON' : 'OFF';
+  window._V10_STATUS = merged;
+  const set = (id, value) => { const el = document.getElementById(id); if (el) el.textContent = value; };
+  set('v10-merge', 'OK');
+  set('v10-radio', getShowInternalEnabled() ? 'ON' : 'OFF');
+  set('v10-last-event', age == null ? 'NO INTERNAL EVENT YET' : `${Number(age).toFixed(1)}s ago · ${String(merged.last_internal_event_type || '--').replace(/_/g, ' ')}`);
+  set('v10-last-prompt', String(lastPrompt || '--').replace(/_/g, ' ').toUpperCase());
+  set('v10-last-json', String(lastJson || '--').toUpperCase());
+  set('v10-last-evidence', merged.last_evidence || internalLoop.last_next_task || '--');
+  set('v10-payload', merged.payload || ((window._RESOURCE.throttled_operations || []).includes('full_payload_hz') ? 'light/full throttled' : 'light + scheduled full'));
+  set('v10-speak', speak);
+  set('v10-state-files', stateFiles.compact_ok === false
+    ? `LARGE bios=${fmtMaybe(sizes['bios_state.json'], 0, 'B')} internal=${fmtMaybe(sizes['internal_loop_state.json'], 0, 'B')}`
+    : `compact bios=${fmtMaybe(sizes['bios_state.json'], 0, 'B')} internal=${fmtMaybe(sizes['internal_loop_state.json'], 0, 'B')}`);
+  set('v10-warning', merged.warning || 'OK');
+}
+
+function updateFastRuntimeIndicators(msg = {}) {
+  const full = window._LAST_FULL_SNAPSHOT || {};
+  const resource = deepMerge(full.resource || {}, window._RESOURCE || {});
+  const performance = deepMerge(full.performance || {}, window._PERFORMANCE || {});
+  const runtimeBudget = full.runtime_budget || {};
+  const tickHz = Number(msg.hz ?? full.hz ?? resource.tick_hz ?? 0);
+  const setBadge = (dotId, modeId, text, color) => {
+    const dot = document.getElementById(dotId);
+    const mode = document.getElementById(modeId);
+    if (dot) dot.className = 'dot dot-' + color;
+    if (mode) mode.textContent = text;
+  };
+  const setText = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = (v === undefined || v === null || v === '') ? '—' : v; };
+  const resourceMode = String(resource.mode || 'normal').toUpperCase();
+  const resourceColor = resource.mode === 'normal' ? 'green'
+    : resource.mode === 'reduced' ? 'yellow'
+    : resource.mode === 'critical' ? 'red'
+    : resource.mode === 'recovery' ? 'orange' : 'gray';
+  setBadge('resource-dot', 'resource-mode', `RESOURCE: ${resourceMode}`, resourceColor);
+  const hostPressure = Number(resource.host_pressure || 0);
+  setBadge('host-dot', 'host-mode', `HOST: ${hostPressure >= 0.75 ? 'PRESSURE' : 'OK'}`, hostPressure >= 0.75 ? 'red' : hostPressure >= 0.55 ? 'yellow' : 'green');
+  setBadge('tick-dot', 'tick-mode', `TICK: ${tickHz.toFixed(1)}HZ`, tickHz > 0 ? 'cyan' : 'gray');
+  const throttled = (resource.throttled_operations || []).length;
+  setBadge('budget-dot', 'budget-mode', `BUDGET: ${throttled ? 'THROTTLED' : 'OK'}`, throttled ? (resource.mode === 'critical' || resource.mode === 'recovery' ? 'red' : 'yellow') : 'green');
+  setText('res-mode', resourceMode);
+  setText('res-host', hostPressure >= 0.75 ? `PRESSURE ${hostPressure.toFixed(2)}` : `OK ${hostPressure.toFixed(2)}`);
+  const recommendedTick = runtimeBudget.recommended_tick_hz ?? resource.recommended_tick_hz ?? tickHz;
+  setText('res-tick', `${tickHz.toFixed(1)}Hz / ${isDefined(recommendedTick) ? Number(recommendedTick).toFixed(1) : '--'}Hz`);
+  setText('res-budget', throttled ? 'THROTTLED' : 'OK');
+  setText('res-lag', performance.event_loop_lag_ms != null ? `${Number(performance.event_loop_lag_ms).toFixed(1)}ms` : '—');
+  setText('res-slowest', performance.slowest_operation ? `${performance.slowest_operation} ${Number(performance.slowest_operation_ms || 0).toFixed(1)}ms` : '—');
+  const uiHz = resource.budget && resource.budget.ui_hz_max != null ? Number(resource.budget.ui_hz_max).toFixed(2) : '—';
+  setText('res-fullhz', uiHz === '—' ? '—' : `${uiHz}Hz`);
+  setText('res-projector-age', runtimeBudget.projector_age_sec != null ? `${Number(runtimeBudget.projector_age_sec).toFixed(1)}s` : '—');
+  setText('res-bios-interval', runtimeBudget.bios_interval_sec != null ? `${Math.round(Number(runtimeBudget.bios_interval_sec))}s` : '—');
+  setText('res-throttled', throttled ? (resource.throttled_operations || []).join(', ') : 'none');
+  updateV10StatusPanel(msg);
+}
+
+function applyLightTick(msg) {
+  const sv = msg.sensors || {};
+  assignDefined(S, sv, [
+    'voltage', 'current_ma',
+    'temp_si', 'temp_ml', 'temp_mr',
+    'ax', 'ay', 'az',
+    'gx', 'gy', 'gz'
+  ]);
+
+  if (msg.system) {
+    assignDefined(SYSTEM, msg.system, [
+      'cpu_percent', 'memory_percent', 'swap_percent',
+      'cpu_temp', 'disk_use_percent', 'disk_used_percent', 'disk_busy_percent',
+      'net_down_mbps', 'net_up_mbps', 'disk_temp'
+    ]);
+  }
+
+  if (msg.resource && typeof msg.resource === 'object') {
+    window._RESOURCE = deepMerge(window._RESOURCE || {}, msg.resource);
+  }
+  if (msg.metabolic && typeof msg.metabolic === 'object') {
+    window._METABOLIC = deepMerge(window._METABOLIC || {}, msg.metabolic);
+  }
+  if (msg.performance && typeof msg.performance === 'object') {
+    window._PERFORMANCE = deepMerge(window._PERFORMANCE || {}, msg.performance);
+  }
+  if (isDefined(msg.hz)) {
+    document.getElementById('hz-readout').textContent = parseFloat(msg.hz).toFixed(1);
+    document.getElementById('cog-hz').textContent = parseFloat(msg.hz).toFixed(1) + ' Hz';
+    document.getElementById('stat-hz').textContent = parseFloat(msg.hz).toFixed(1);
+    COG_INTERVAL = 1000 / Math.max(0.1, Number(msg.hz));
+  }
+  updateFastRuntimeIndicators(msg);
+}
+
+function applySnapshot(msg, options = {}) {
   const llmInfo = msg.llm || null;
   const providerInfo = msg.provider || null;
   const projectorInfo = msg.projector || null;
@@ -2670,21 +2966,11 @@ function applySnapshot(msg) {
   const actuationInfo = msg.actuation || null;
   const sv = msg.sensors || msg.core || {};
   if (Object.keys(sv).length) {
-    S.voltage = sv.voltage;
-    S.current_ma = sv.current_ma;
-    S.temp_si = sv.temp_si;
-    S.temp_ml = sv.temp_ml;
-    S.temp_mr = sv.temp_mr;
-    S.ax = sv.ax;
-    S.ay = sv.ay;
-    S.az = sv.az;
-    S.gx = sv.gx;
-    S.gy = sv.gy;
-    S.gz = sv.gz;
+    assignDefined(S, sv, ['voltage', 'current_ma', 'temp_si', 'temp_ml', 'temp_mr', 'ax', 'ay', 'az', 'gx', 'gy', 'gz']);
   }
 
   if (msg.system) {
-    Object.assign(SYSTEM, msg.system);
+    assignDefined(SYSTEM, msg.system, Object.keys(msg.system));
   }
 
   if (providerInfo && typeof providerInfo === 'object') {
@@ -2714,38 +3000,44 @@ function applySnapshot(msg) {
     document.getElementById('stat-caps').textContent = msg.user_caps_count || 0;
   }
   if (msg.mind && typeof msg.mind === 'object') {
-    window._MIND = msg.mind;
+    window._MIND = deepMerge(window._MIND || {}, msg.mind);
     updateVolitionStatus(msg.mind);
   }
   if (msg.drives && typeof msg.drives === 'object') {
-    window._DRIVES = msg.drives;
+    window._DRIVES = deepMerge(window._DRIVES || {}, msg.drives);
   }
   if (msg.growth && typeof msg.growth === 'object') {
-    window._GROWTH = msg.growth;
+    window._GROWTH = deepMerge(window._GROWTH || {}, msg.growth);
   }
   if (msg.metabolic && typeof msg.metabolic === 'object') {
-    window._METABOLIC = msg.metabolic;
+    window._METABOLIC = deepMerge(window._METABOLIC || {}, msg.metabolic);
   }
   if (msg.resource && typeof msg.resource === 'object') {
-    window._RESOURCE = msg.resource;
+    window._RESOURCE = deepMerge(window._RESOURCE || {}, msg.resource);
   }
   if (msg.performance && typeof msg.performance === 'object') {
-    window._PERFORMANCE = msg.performance;
+    window._PERFORMANCE = deepMerge(window._PERFORMANCE || {}, msg.performance);
   }
   if (msg.scheduler && typeof msg.scheduler === 'object') {
-    window._SCHEDULER = msg.scheduler;
+    window._SCHEDULER = deepMerge(window._SCHEDULER || {}, msg.scheduler);
   }
   if (msg.reward && typeof msg.reward === 'object') {
-    window._REWARD = msg.reward;
+    window._REWARD = deepMerge(window._REWARD || {}, msg.reward);
   }
   if (msg.vector_state && typeof msg.vector_state === 'object') {
-    window._VECTOR_STATE = msg.vector_state;
+    window._VECTOR_STATE = deepMerge(window._VECTOR_STATE || {}, msg.vector_state);
   }
   if (msg.internal_loop && typeof msg.internal_loop === 'object') {
-    window._INTERNAL_LOOP = msg.internal_loop;
+    window._INTERNAL_LOOP = deepMerge(window._INTERNAL_LOOP || {}, msg.internal_loop);
   }
   if (msg.mutation && typeof msg.mutation === 'object') {
-    window._MUTATION = msg.mutation;
+    window._MUTATION = deepMerge(window._MUTATION || {}, msg.mutation);
+  }
+  if (msg.autobiography && typeof msg.autobiography === 'object') {
+    window._AUTOBIO = deepMerge(window._AUTOBIO || {}, msg.autobiography);
+  }
+  if (msg.v10_status && typeof msg.v10_status === 'object') {
+    window._V10_STATUS = deepMerge(window._V10_STATUS || {}, msg.v10_status);
   }
   if (msg.trace && Array.isArray(msg.trace)) {
     window._TRACE = msg.trace;
@@ -2760,6 +3052,7 @@ function applySnapshot(msg) {
     updateMemoryPanel(msg.journal);
   }
   updatePhase8Panel(msg);
+  updateFastRuntimeIndicators(msg);
 
   if (msg.hz) {
     document.getElementById('hz-slider').value = msg.hz;
@@ -2791,18 +3084,25 @@ function applySnapshot(msg) {
   if (msg.affect || msg.actions) {
     applyAffectActions(msg.affect || avatarState.affect, msg.actions || avatarState.actions);
   }
+  if (options.full) {
+    applyInternalVisibilityFilters();
+    updateInternalToggleButtons();
+  }
 }
 
 function handleWSMessage(msg) {
   if (msg.type === 'init') {
-    applySnapshot(msg);
+    rememberFullSnapshot(msg);
+    applySnapshot(window._LAST_FULL_SNAPSHOT, { full:true });
     addConsoleEntry(msg.message || 'LSF server connected. Provider and projector state synchronized.');
   } else if (msg.type === 'tick_light') {
     if (!running) return;
-    applySnapshot(msg);
-  } else if (msg.type === 'tick') {
+    window._LAST_LIGHT_TICK = msg;
+    applyLightTick(msg);
+  } else if (msg.type === 'tick' || msg.type === 'full_state') {
     if (!running) return;
-    applySnapshot(msg);
+    rememberFullSnapshot(msg);
+    applySnapshot(window._LAST_FULL_SNAPSHOT, { full:true });
   } else if (msg.type === 'cns_stream') {
     // Real-time cognitive stream from server — the entity's self-awareness feed
     if (msg.kind === 'pulse') {
@@ -2813,7 +3113,8 @@ function handleWSMessage(msg) {
     }
     addConsoleEntry(msg.text || '', msg.kind || 'pulse', { status: msg.status, field: msg.field });
   } else if (msg.type === 'autonomous_event') {
-    applySnapshot(msg);
+    rememberFullSnapshot(msg);
+    applySnapshot(window._LAST_FULL_SNAPSHOT, { full:true });
     cogCycle++;
     totalTokens += Math.ceil((msg.text || '').split(/\s+/).filter(Boolean).length * 1.3);
     document.getElementById('stat-tokens').textContent = totalTokens;
@@ -2824,9 +3125,13 @@ function handleWSMessage(msg) {
     document.getElementById('stat-caps').textContent = msg.count || 0;
   } else if (msg.type === 'deepseek_dialogue') {
     appendDsEntry(msg.role, msg.text || '', msg.purpose, msg.field);
+  } else if (msg.type === 'inner_prompt' || msg.type === 'inner_llm_raw' || msg.type === 'inner_decision' || msg.type === 'inner_evidence') {
+    appendInnerRadioEvent(msg);
+    updateV10FromInnerEvent(msg);
   } else if (msg.type === 'chat_reply') {
     removeTyping();
-    applySnapshot(msg);
+    rememberFullSnapshot(msg);
+    applySnapshot(window._LAST_FULL_SNAPSHOT, { full:true });
     const sc = msg.scenario || scenario;
     const urgency = (sc==='fall'||S.voltage<10.5) ? 'critical'
       : (sc==='overheat'||sc==='lowbatt'||sc==='cold'||sc==='spin') ? 'warn' : '';
@@ -2980,6 +3285,96 @@ function appendDsEntry(role, text, purpose, field) {
   if (dsTurnsEl) dsTurnsEl.textContent = dsTurnCount;
 }
 
+function appendInnerRadioEvent(event) {
+  const kind = String(event.type || '');
+  let label = 'SOMA // INTERNAL';
+  let extraClass = '';
+  let innerType = 'event';
+  let text = '';
+  let speakText = '';
+  let speakKind = 'event';
+  if (kind === 'inner_prompt') {
+    label = 'SOMA // PROMPT';
+    extraClass = 'msg-radio-prompt';
+    innerType = 'prompt';
+    text = `${event.summary || 'internal prompt generated'}\n${event.prompt_preview || ''}`.trim();
+    speakText = `Internal prompt generated: ${String(event.prompt_type || 'planner').replace(/_/g, ' ')}.`;
+    speakKind = 'prompt';
+  } else if (kind === 'inner_llm_raw') {
+    label = 'DEEPSEEK // RAW';
+    extraClass = 'msg-radio-raw';
+    innerType = 'raw';
+    text = `${event.source || 'fallback'}${event.raw_preview ? `\n${event.raw_preview}` : ''}`.trim();
+    speakText = event.source === 'invalid_json'
+      ? 'Internal raw response was invalid JSON. Fallback engaged.'
+      : event.source === 'fallback'
+        ? 'Internal loop used a fallback decision.'
+        : `Internal raw response source: ${event.source || 'deepseek'}.`;
+    speakKind = 'raw';
+  } else if (kind === 'inner_decision') {
+    if (String(event.action_type || '').includes('mutation') || String(event.action_type || '') === 'sandbox_test') {
+      label = 'SOMA // MUTATION';
+    } else if (['pause_growth', 'recover', 'reduce_load'].includes(String(event.action_type || ''))) {
+      label = 'SOMA // RECOVERY';
+    } else {
+      label = 'SOMA // DECISION';
+    }
+    extraClass = 'msg-radio-decision';
+    innerType = 'decision';
+    text = `action=${event.action_type || 'observe'} · fallback=${event.fallback ? 'yes' : 'no'}${event.reason ? `\n${event.reason}` : ''}`;
+    speakText = `Decision parsed: ${event.action_type || 'observe'}, ${event.fallback ? 'fallback' : 'valid JSON'}.`;
+    speakKind = 'decision';
+  } else if (kind === 'inner_evidence') {
+    const actionType = String((event.action_taken || {}).action_type || '');
+    const ok = event.evidence ? event.evidence.ok !== false : true;
+    if (!ok) label = 'SOMA // BLOCKED';
+    else if (actionType.includes('mutation') || actionType === 'sandbox_test') label = 'SOMA // MUTATION';
+    else if (Number(event.reward_delta || 0) !== 0) label = 'SOMA // REWARD';
+    else label = 'SOMA // EVIDENCE';
+    extraClass = 'msg-radio-evidence';
+    innerType = 'evidence';
+    text = `${event.summary || 'evidence recorded'}${event.next_task ? `\nnext=${event.next_task}` : ''}`;
+    speakText = event.reward_delta < 0
+      ? `Evidence stored. Reward delta ${event.reward_delta}.`
+      : event.next_task
+        ? `Evidence stored. Next task: ${event.next_task}.`
+        : 'Evidence stored.';
+    speakKind = 'evidence';
+  } else {
+    return;
+  }
+  appendInternalMsg(
+    kind === 'inner_llm_raw' ? 'deepseek' : 'entity',
+    text,
+    '',
+    '',
+    { label, extraClass, innerType, speakText, speakKind }
+  );
+}
+
+function updateV10FromInnerEvent(event) {
+  const next = {
+    last_internal_event_at: event.ts || (Date.now() / 1000),
+    last_internal_event_type: event.type || '',
+  };
+  if (event.type === 'inner_prompt') {
+    next.last_prompt = event.prompt_type || '';
+  }
+  if (event.type === 'inner_decision') {
+    next.last_json = event.fallback ? 'fallback' : 'valid';
+    if (event.fallback) next.warning = 'INTERNAL_LLM_FALLBACK_ONLY';
+  }
+  if (event.type === 'inner_llm_raw' && event.source === 'invalid_json') {
+    next.last_json = 'invalid';
+    next.warning = 'INTERNAL_LLM_FALLBACK_ONLY';
+  }
+  if (event.type === 'inner_evidence') {
+    next.last_evidence = event.summary || event.next_task || '';
+  }
+  window._V10_STATUS = deepMerge(window._V10_STATUS || {}, next);
+  updateV10StatusPanel();
+}
+
 // ─────────────────────────────────────────────
 // Phase 6 — Memory panel
 // ─────────────────────────────────────────────
@@ -3029,18 +3424,19 @@ function updateMemoryPanel(journal) {
 }
 
 function updatePhase8Panel(msg) {
-  const autobiography = msg.autobiography || {};
-  const growth = msg.growth || {};
-  const bios = msg.bios || {};
-  const mutation = msg.mutation || {};
-  const cpp = msg.cpp_bridge || {};
-  const metabolic = msg.metabolic || {};
-  const reward = msg.reward || {};
-  const resource = msg.resource || {};
-  const performance = msg.performance || {};
-  const runtimeBudget = msg.runtime_budget || {};
-  const vectorState = msg.vector_state || {};
-  const internalLoop = msg.internal_loop || {};
+  const full = window._LAST_FULL_SNAPSHOT || {};
+  const autobiography = msg.autobiography || full.autobiography || window._AUTOBIO || {};
+  const growth = msg.growth || full.growth || window._GROWTH || {};
+  const bios = msg.bios || full.bios || {};
+  const mutation = msg.mutation || full.mutation || window._MUTATION || {};
+  const cpp = msg.cpp_bridge || full.cpp_bridge || {};
+  const metabolic = msg.metabolic || full.metabolic || window._METABOLIC || {};
+  const reward = msg.reward || full.reward || window._REWARD || {};
+  const resource = msg.resource || full.resource || window._RESOURCE || {};
+  const performance = msg.performance || full.performance || window._PERFORMANCE || {};
+  const runtimeBudget = msg.runtime_budget || full.runtime_budget || {};
+  const vectorState = msg.vector_state || full.vector_state || window._VECTOR_STATE || {};
+  const internalLoop = msg.internal_loop || full.internal_loop || window._INTERNAL_LOOP || {};
 
   const setBadge = (dotId, modeId, text, color) => {
     const dot = document.getElementById(dotId);
@@ -3072,7 +3468,7 @@ function updatePhase8Panel(msg) {
   setBadge('resource-dot', 'resource-mode', `RESOURCE: ${resourceMode}`, resourceColor);
   const hostPressure = Number(resource.host_pressure || 0);
   setBadge('host-dot', 'host-mode', `HOST: ${hostPressure >= 0.75 ? 'PRESSURE' : 'OK'}`, hostPressure >= 0.75 ? 'red' : hostPressure >= 0.55 ? 'yellow' : 'green');
-  const tickHz = Number(msg.hz || 0);
+  const tickHz = Number(msg.hz ?? full.hz ?? resource.tick_hz ?? 0);
   setBadge('tick-dot', 'tick-mode', `TICK: ${tickHz.toFixed(1)}HZ`, tickHz > 0 ? 'cyan' : 'gray');
   const throttled = (resource.throttled_operations || []).length;
   setBadge('budget-dot', 'budget-mode', `BUDGET: ${throttled ? 'THROTTLED' : 'OK'}`, throttled ? (resource.mode === 'critical' || resource.mode === 'recovery' ? 'red' : 'yellow') : 'green');
@@ -3130,6 +3526,7 @@ function updatePhase8Panel(msg) {
   setText('res-projector-age', runtimeBudget.projector_age_sec != null ? `${Number(runtimeBudget.projector_age_sec).toFixed(1)}s` : '—');
   setText('res-bios-interval', runtimeBudget.bios_interval_sec != null ? `${Math.round(Number(runtimeBudget.bios_interval_sec))}s` : '—');
   setText('res-throttled', throttled ? (resource.throttled_operations || []).join(', ') : 'none');
+  updateV10StatusPanel(msg);
 }
 
 // ─────────────────────────────────────────────
@@ -3138,6 +3535,9 @@ function updatePhase8Panel(msg) {
 window.addEventListener('resize', ()=>{ resizeIMU(); resizeHeatmap(); resizeBodyOverlay(); });
 requestAnimationFrame(frame);
 updateChatCoreStatus();
+updateInternalToggleButtons();
+applyInternalVisibilityFilters();
+updateV10StatusPanel();
 connectWS();
 
 setTimeout(()=>{

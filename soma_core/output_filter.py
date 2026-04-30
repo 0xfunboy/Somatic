@@ -59,10 +59,13 @@ class OutputFilter:
         *,
         command_result: dict[str, Any] | None = None,
         skill_result: dict[str, Any] | None = None,
+        preserve_format: bool = False,
     ) -> str:
         raw = (text or "").strip()
         if not raw:
             return _fallback_text(user_text)
+        if preserve_format:
+            return raw
 
         mention_body, _reason = self._relevance.should_mention_body(user_text, snapshot, command_result)
         if mention_body:

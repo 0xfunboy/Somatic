@@ -101,6 +101,17 @@ def main() -> int:
             reports.append(compact_self_model(path, apply=apply))
         else:
             reports.append(maybe_compact_json_state(path, apply=apply, archive_dir=ARCHIVE))
+    prompt_index = MIND / "internal_prompt_index.jsonl"
+    reports.append(
+        {
+            "path": str(prompt_index),
+            "applied": False,
+            "archived_to": "",
+            "original_bytes": prompt_index.stat().st_size if prompt_index.exists() else 0,
+            "compacted_bytes": prompt_index.stat().st_size if prompt_index.exists() else 0,
+            "line_count": sum(1 for _ in prompt_index.open("r", encoding="utf-8")) if prompt_index.exists() else 0,
+        }
+    )
 
     print(json.dumps({"apply": apply, "reports": reports}, indent=2, ensure_ascii=False))
     return 0

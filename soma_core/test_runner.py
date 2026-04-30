@@ -87,6 +87,23 @@ def _suite_catalog() -> tuple[TestSuite, ...]:
             ),
         ),
         TestSuite(
+            id="phase10_v10",
+            label="Phase 10 V10 Validation",
+            description="Checks stable light-tick merge, internal radio events, prompt ledger, deterministic introspection, speech UI wiring, and V10 smoke expectations.",
+            category="validation",
+            estimated_minutes=1.6,
+            steps=(
+                TestStep("test_light_tick_ui_regression", "Light tick UI regression", "python3 scripts/test_light_tick_ui_regression.py", "Checks full-cache merge and no light-tick badge reset.", 30.0),
+                TestStep("test_internal_radio_events", "Internal radio events", "python3 scripts/test_internal_radio_events.py", "Checks prompt/raw/decision/evidence event emission.", 30.0),
+                TestStep("test_internal_radio_replay", "Internal radio replay", "python3 scripts/test_internal_radio_replay.py", "Checks persisted internal prompt/decision/evidence replay on connect.", 30.0),
+                TestStep("test_internal_prompt_ledger", "Internal prompt ledger", "python3 scripts/test_internal_prompt_ledger.py", "Checks ledger writes and compact state references.", 30.0),
+                TestStep("test_v10_introspection_finalization", "V10 introspection finalization", "python3 scripts/test_v10_introspection_finalization.py", "Checks deterministic direct answers without telemetry filler.", 30.0),
+                TestStep("test_speech_ui_static", "Speech UI static", "python3 scripts/test_speech_ui_static.py", "Checks Web Speech toggle wiring and queue cap.", 30.0),
+                TestStep("test_internal_reinjection", "Internal reinjection", "python3 scripts/test_internal_reinjection.py", "Checks internal decisions reinject into state, reward, and growth metadata.", 30.0),
+                TestStep("test_v10_smoke", "V10 smoke", "python3 scripts/test_v10_smoke.py", "Checks V10 env defaults, UI panel, and backend event surface.", 30.0),
+            ),
+        ),
+        TestSuite(
             id="cognition_regressions",
             label="Cognition Regressions",
             description="Regression coverage for answer finalization, relevance/output filters, growth, reward, and vector interpretation.",

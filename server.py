@@ -438,8 +438,12 @@ def make_runtime_state() -> dict[str, Any]:
         "last_policy_hz": TICK_HZ,
         "last_payload_throttle_reward_at": 0.0,
         "last_growth_resource_reward_at": 0.0,
+        "last_mutation_resource_reward_at": 0.0,
         "actuation_last_signature": None,
         "actuation_last_dispatch_at": 0.0,
+        "pending_ws_events": deque(maxlen=256),
+        "last_internal_event_at": 0.0,
+        "last_internal_event_type": "",
         "resource": {},
         "performance": {},
         "medium": {
@@ -498,6 +502,161 @@ load_machine_fusion()
 provider = create_provider(SENSOR_PROVIDER_NAME)
 clients: set[ServerConnection] = set()
 runtime: dict[str, Any] = make_runtime_state()
+
+
+def _queue_runtime_event(event: dict[str, Any]) -> None:
+    queue = runtime.get("pending_ws_events")
+    if not isinstance(queue, deque):
+        queue = deque(maxlen=256)
+        runtime["pending_ws_events"] = queue
+    payload = dict(event or {})
+    payload.setdefault("ts", time.time())
+    queue.append(payload)
+    runtime["last_internal_event_at"] = float(payload.get("ts") or time.time())
+    runtime["last_internal_event_type"] = str(payload.get("type") or "")
+    runtime["force_full_payload"] = True
+
+
+def _drain_runtime_events() -> list[dict[str, Any]]:
+    queue = runtime.get("pending_ws_events")
+    if not isinstance(queue, deque) or not queue:
+        return []
+    events = list(queue)
+    queue.clear()
+    return events
+
+
+def _internal_radio_replay_events(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
+    internal = snapshot.get("internal_loop") or {}
+    bios = snapshot.get("bios_status") or {}
+    if not isinstance(internal, dict):
+        internal = {}
+    if not isinstance(bios, dict):
+        bios = {}
+    ts = float(
+        internal.get("last_run_at")
+        or bios.get("last_run_at")
+        or 0.0
+    )
+    decision_id = str(internal.get("last_decision_id") or bios.get("last_decision_id") or f"replay-{int(ts or time.time())}")
+    action = internal.get("last_action_taken") or internal.get("last_action") or bios.get("last_internal_decision") or {}
+    decision = internal.get("last_parsed") or internal.get("last_parsed_fallback") or bios.get("last_internal_decision") or action
+    evidence = internal.get("last_evidence") or bios.get("last_evidence") or {}
+    memory_updates = internal.get("last_memory_updates") or bios.get("last_memory_updates") or []
+    growth_updates = internal.get("last_growth_updates") or bios.get("last_growth_updates") or []
+    prompt_preview = str(
+        internal.get("last_prompt_preview")
+        or bios.get("last_internal_prompt_preview")
+        or ((internal.get("last_prompt") or {}).get("preview"))
+        or ((bios.get("last_internal_prompt") or {}).get("preview"))
+        or ""
+    ).strip()
+    prompt_path = str(
+        internal.get("last_prompt_path")
+        or bios.get("last_internal_prompt_path")
+        or ((internal.get("last_prompt") or {}).get("archive_path"))
+        or ((bios.get("last_internal_prompt") or {}).get("archive_path"))
+        or ""
+    ).strip()
+    raw_preview = str(
+        internal.get("last_raw_preview")
+        or bios.get("last_raw_preview")
+        or ((internal.get("last_raw") or {}).get("preview"))
+        or ((bios.get("last_raw") or {}).get("preview"))
+        or ""
+    ).strip()
+    raw_path = str(
+        internal.get("last_raw_path")
+        or bios.get("last_raw_path")
+        or ((internal.get("last_raw") or {}).get("archive_path"))
+        or ((bios.get("last_raw") or {}).get("archive_path"))
+        or ""
+    ).strip()
+
+    events: list[dict[str, Any]] = []
+    if prompt_preview or prompt_path:
+        events.append(
+            {
+                "type": "inner_prompt",
+                "id": decision_id,
+                "ts": ts or time.time(),
+                "mode": str(internal.get("last_mode") or bios.get("last_mode") or internal.get("last_metabolic_mode") or "observe"),
+                "prompt_type": str(internal.get("last_prompt_type") or "persisted_prompt"),
+                "summary": "last persisted internal prompt",
+                "prompt_preview": prompt_preview,
+                "prompt_path": prompt_path,
+                "resource_mode": str(internal.get("last_resource_mode") or ""),
+                "metabolic_mode": str(internal.get("last_metabolic_mode") or internal.get("last_mode") or ""),
+                "replay": True,
+            }
+        )
+    if raw_preview or raw_path or internal.get("last_fallback") or internal.get("last_error"):
+        source = "state_replay"
+        if internal.get("last_fallback") and not raw_preview:
+            source = "fallback"
+        elif internal.get("last_error") and not raw_preview:
+            source = str(internal.get("last_error") or "invalid_json")
+        events.append(
+            {
+                "type": "inner_llm_raw",
+                "id": decision_id,
+                "ts": ts or time.time(),
+                "source": source,
+                "raw_preview": raw_preview,
+                "raw_path": raw_path,
+                "reason": "replayed persisted internal raw state",
+                "replay": True,
+            }
+        )
+    if decision or action:
+        events.append(
+            {
+                "type": "inner_decision",
+                "id": decision_id,
+                "ts": ts or time.time(),
+                "parsed": decision,
+                "action_type": str(action.get("action_type") or decision.get("action_type") or "observe"),
+                "risk": str(decision.get("risk") or action.get("risk") or ""),
+                "reason": str(internal.get("last_reason") or decision.get("reason") or action.get("reason") or ""),
+                "fallback": bool(internal.get("last_fallback")),
+                "replay": True,
+            }
+        )
+    if evidence or internal.get("last_next_task") or memory_updates or growth_updates:
+        summary = str(
+            evidence.get("reason")
+            or action.get("goal")
+            or internal.get("last_goal")
+            or internal.get("last_next_task")
+            or "persisted internal evidence"
+        )[:240]
+        events.append(
+            {
+                "type": "inner_evidence",
+                "id": decision_id,
+                "ts": ts or time.time(),
+                "action_taken": action,
+                "evidence": evidence,
+                "reward_delta": float(internal.get("last_reward_delta", 0.0) or 0.0),
+                "memory_updates": memory_updates,
+                "growth_updates": growth_updates,
+                "next_task": str(internal.get("last_next_task") or bios.get("last_internal_next_task") or ""),
+                "summary": summary,
+                "replay": True,
+            }
+        )
+    return events
+
+
+def _prime_runtime_internal_event_state(snapshot: dict[str, Any]) -> None:
+    if float(runtime.get("last_internal_event_at", 0.0) or 0.0) > 0.0:
+        return
+    replay = _internal_radio_replay_events(snapshot)
+    if not replay:
+        return
+    latest = replay[-1]
+    runtime["last_internal_event_at"] = float(latest.get("ts") or time.time())
+    runtime["last_internal_event_type"] = str(latest.get("type") or "")
 
 # ── hardware discovery globals ────────────────────────────────────────────────
 _shell_exec = ShellExecutor()
@@ -648,6 +807,7 @@ _internal_loop: InternalLoop | None = InternalLoop(
     autobiography=_autobiography,
     experience=_experience,
     resource_governor=_resource_governor,
+    emit_event=_queue_runtime_event,
 )
 
 if _cfg_ref.journal_enabled:
@@ -2966,6 +3126,21 @@ def run_slow_maintenance(snapshot: dict[str, Any], *, force: bool = False) -> No
             cache["internal_loop"] = _internal_loop.status() if _internal_loop is not None else cache.get("internal_loop", {"enabled": False})
             cache["mutation_status"] = _mutation_sandbox.status() if _mutation_sandbox is not None else cache.get("mutation_status", {})
             cache["reward"] = _reward_engine.summary()
+            if result is not None:
+                runtime["force_full_payload"] = True
+                internal_record = (((result.get("result") or {}).get("internal_record")) or {})
+                growth_cache = dict(cache.get("growth") or snapshot.get("_growth") or {})
+                if internal_record:
+                    growth_cache.update(
+                        {
+                            "current_internal_goal": str((internal_record.get("action_taken") or {}).get("goal") or ""),
+                            "pending_gain": str((internal_record.get("action_taken") or {}).get("expected_power_gain") or ""),
+                            "last_internal_reason": str((internal_record.get("action_taken") or {}).get("reason") or ""),
+                            "last_internal_next_task": str(internal_record.get("next_task") or ""),
+                        }
+                    )
+                    cache["growth"] = growth_cache
+                    snapshot["_growth"] = growth_cache
             snapshot["bios_status"] = cache["bios_status"]
             snapshot["internal_loop"] = cache["internal_loop"]
             snapshot["mutation_status"] = cache["mutation_status"]
@@ -3048,6 +3223,59 @@ def _journal_status() -> dict[str, Any]:
     return status
 
 
+def _mind_state_compact_summary() -> dict[str, Any]:
+    mind_root = Path(__file__).parent / "data" / "mind"
+    sizes: dict[str, int] = {}
+    for name in ("bios_state.json", "internal_loop_state.json", "internal_prompt_index.jsonl"):
+        path = mind_root / name
+        try:
+            sizes[name] = path.stat().st_size
+        except OSError:
+            sizes[name] = 0
+    compact_ok = sizes.get("bios_state.json", 0) <= _cfg_ref.mind_state_max_bytes and sizes.get("internal_loop_state.json", 0) <= _cfg_ref.mind_state_max_bytes
+    return {"compact_ok": compact_ok, "sizes": sizes}
+
+
+def _v10_status_payload(snapshot: dict[str, Any]) -> dict[str, Any]:
+    internal = snapshot.get("internal_loop") or {}
+    resource = snapshot.get("resource") or {}
+    compact = _mind_state_compact_summary()
+    last_event_at = float(runtime.get("last_internal_event_at", 0.0) or 0.0)
+    last_prompt = str(internal.get("last_prompt_type") or "").strip()
+    if internal.get("last_parsed"):
+        json_state = "valid"
+    elif internal.get("last_parsed_fallback") or internal.get("last_fallback"):
+        json_state = "fallback"
+    elif internal.get("last_error"):
+        json_state = "invalid"
+    else:
+        json_state = "none"
+    throttled = list(resource.get("throttled_operations") or [])
+    return {
+        "frontend_merge": "expected_full_cache_merge",
+        "inner_radio": bool(_cfg_ref.v10_internal_radio),
+        "last_internal_event_at": last_event_at,
+        "last_internal_event_age_sec": round(max(0.0, time.time() - last_event_at), 3) if last_event_at else None,
+        "last_internal_event_type": str(runtime.get("last_internal_event_type") or ""),
+        "last_prompt": last_prompt,
+        "last_json": json_state,
+        "last_evidence": str(internal.get("last_next_task") or "") or str((internal.get("last_evidence") or {}).get("reason") or ""),
+        "resource_mode": str(resource.get("mode") or "normal"),
+        "payload": "light/full throttled" if "full_payload_hz" in throttled else "light + scheduled full",
+        "speak_default": bool(_cfg_ref.ui_speak_internal_default),
+        "state_files": compact,
+        "warning": (
+            "NO_INTERNAL_PROMPT_YET" if not last_prompt else
+            "INTERNAL_LLM_FALLBACK_ONLY" if json_state == "fallback" else
+            "STATE_FILE_TOO_LARGE" if not compact.get("compact_ok") else
+            "RESOURCE_RECOVERY_INTERNAL_LLM_PAUSED" if resource.get("mode") in {"critical", "recovery"} else
+            ("MUTATION_BLOCKED:" + ",".join(str(item) for item in ((snapshot.get("mutation_status") or {}).get("last_blockers") or [])[:3]))
+            if (snapshot.get("mutation_status") or {}).get("last_blockers") else
+            ""
+        ),
+    }
+
+
 def public_payload(snapshot: dict[str, Any], *, llm_override: dict[str, Any] | None = None) -> dict[str, Any]:
     llm_status = build_llm_status(snapshot, llm_override)
     cache = _medium_cache()
@@ -3113,32 +3341,64 @@ def public_payload(snapshot: dict[str, Any], *, llm_override: dict[str, Any] | N
             "bios_interval_sec": float(_resource_governor.recommended_bios_interval_sec()),
             "recommended_tick_hz": float(_resource_governor.recommended_tick_hz()),
         },
+        "v10_status": _v10_status_payload(snapshot),
     }
 
 
 def light_tick_payload(snapshot: dict[str, Any]) -> dict[str, Any]:
+    performance = snapshot.get("performance") or runtime.get("performance") or {}
+    resource = snapshot.get("resource") or {}
     return {
         "type": "tick_light",
         "timestamp": snapshot["timestamp"],
+        "hz": runtime.get("hz"),
         "sensors": {
             "voltage": rounded(snapshot["sensors"].get("voltage"), 3),
+            "current_ma": rounded(snapshot["sensors"].get("current_ma"), 3),
             "temp_si": rounded(snapshot["sensors"].get("temp_si"), 3),
+            "temp_ml": rounded(snapshot["sensors"].get("temp_ml"), 3),
+            "temp_mr": rounded(snapshot["sensors"].get("temp_mr"), 3),
+            "ax": rounded(snapshot["sensors"].get("ax"), 3),
+            "ay": rounded(snapshot["sensors"].get("ay"), 3),
             "az": rounded(snapshot["sensors"].get("az"), 3),
+            "gx": rounded(snapshot["sensors"].get("gx"), 3),
+            "gy": rounded(snapshot["sensors"].get("gy"), 3),
+            "gz": rounded(snapshot["sensors"].get("gz"), 3),
         },
         "system": {
             "cpu_percent": rounded(snapshot["system"].get("cpu_percent"), 3),
             "memory_percent": rounded(snapshot["system"].get("memory_percent"), 3),
+            "swap_percent": rounded(snapshot["system"].get("swap_percent"), 3),
             "cpu_temp": rounded(snapshot["system"].get("cpu_temp"), 3),
+            "disk_use_percent": rounded(snapshot["system"].get("disk_use_percent"), 3),
+            "disk_used_percent": rounded(snapshot["system"].get("disk_used_percent"), 3),
+            "disk_busy_percent": rounded(snapshot["system"].get("disk_busy_percent"), 3),
+            "disk_temp": rounded(snapshot["system"].get("disk_temp"), 3),
+            "net_down_mbps": rounded(snapshot["system"].get("net_down_mbps"), 3),
+            "net_up_mbps": rounded(snapshot["system"].get("net_up_mbps"), 3),
         },
         "metabolic": {
             "mode": (snapshot.get("metabolic") or {}).get("mode"),
             "stability": rounded((snapshot.get("metabolic") or {}).get("stability"), 4),
             "stress": rounded((snapshot.get("metabolic") or {}).get("stress"), 4),
+            "recovery_required": bool((snapshot.get("metabolic") or {}).get("recovery_required")),
+            "growth_allowed": bool((snapshot.get("metabolic") or {}).get("growth_allowed")),
         },
         "resource": {
-            "mode": (snapshot.get("resource") or {}).get("mode"),
+            "mode": resource.get("mode"),
             "tick_hz": rounded(runtime.get("hz"), 3),
-            "host_pressure": rounded((snapshot.get("resource") or {}).get("host_pressure"), 4),
+            "host_pressure": rounded(resource.get("host_pressure"), 4),
+            "budget": {
+                "ui_hz_max": rounded((resource.get("budget") or {}).get("ui_hz_max"), 3),
+                "tick_hz_max": rounded((resource.get("budget") or {}).get("tick_hz_max"), 3),
+            },
+            "throttled_operations": list(resource.get("throttled_operations") or []),
+        },
+        "performance": {
+            "event_loop_lag_ms": rounded(performance.get("event_loop_lag_ms"), 3),
+            "tick_total_ms": rounded(performance.get("tick_total_ms"), 3),
+            "slowest_operation": performance.get("slowest_operation"),
+            "slowest_operation_ms": rounded(performance.get("slowest_operation_ms"), 3),
         },
     }
 
@@ -3322,6 +3582,11 @@ async def broadcast(msg: dict[str, Any]):
     _resource_governor.record_operation("websocket_broadcast", duration_ms)
 
 
+async def broadcast_pending_runtime_events() -> None:
+    for event in _drain_runtime_events():
+        await broadcast(event)
+
+
 async def tick_loop():
     next_target = time.monotonic()
     while True:
@@ -3337,6 +3602,7 @@ async def tick_loop():
         snapshot = build_fast_snapshot()
         update_medium_state(snapshot, force=False)
         run_slow_maintenance(snapshot, force=False)
+        await broadcast_pending_runtime_events()
 
         light_interval = max(1.0 / max(_cfg_ref.ui_light_tick_hz, 0.1), 0.1)
         if runtime.get("last_light_payload_at", 0.0) <= 0.0 or _scheduler.allow("ui_light_payload", light_interval, _resource_governor, cost="low")[0]:
@@ -3425,6 +3691,7 @@ async def handler(websocket: ServerConnection):
     print(f"[WSS] Client connected: {remote} (total: {len(clients)})")
 
     snapshot = runtime["last_snapshot"] or build_snapshot(force_full=False)
+    _prime_runtime_internal_event_state(snapshot)
     await websocket.send(
         safe_json_dumps(
             {
@@ -3438,6 +3705,8 @@ async def handler(websocket: ServerConnection):
             }
         )
     )
+    for event in _internal_radio_replay_events(snapshot):
+        await websocket.send(safe_json_dumps(event))
 
     try:
         async for raw in websocket:
@@ -3455,6 +3724,7 @@ async def handler(websocket: ServerConnection):
                 runtime["last_user_message_at"] = time.time()
                 runtime["force_full_payload"] = True
                 snapshot = build_snapshot(force_full=False)
+                await broadcast_pending_runtime_events()
                 if _routine_runner is not None:
                     _routine_runner.set_last_user_interaction(time.monotonic())
                 _soma_mind.on_user_message(user_text, snapshot)

@@ -12,7 +12,7 @@ from soma_core.config import CFG
 
 
 _REPO_ROOT = Path(__file__).parent.parent.resolve()
-_PROMPT_PREVIEW_CHARS = 1200
+_PROMPT_PREVIEW_CHARS = max(200, int(getattr(CFG, "internal_event_preview_chars", 900) or 900))
 _SUMMARY_STRING_CHARS = 400
 
 
@@ -47,16 +47,67 @@ def archive_prompt_text(text: str, data_root: Path | None = None, *, kind: str =
     return str(archive_path)
 
 
-def compact_prompt(prompt: str, data_root: Path | None = None, *, kind: str = "prompt") -> dict[str, Any]:
+def prompt_preview(text: str, *, limit: int | None = None) -> str:
+    size = max(120, int(limit or _PROMPT_PREVIEW_CHARS))
+    return str(text or "")[:size]
+
+
+def compact_prompt(
+    prompt: str,
+    data_root: Path | None = None,
+    *,
+    kind: str = "prompt",
+    preview_chars: int | None = None,
+) -> dict[str, Any]:
     text = str(prompt or "")
     if not text:
         return {"sha1": "", "preview": "", "chars": 0, "archive_path": ""}
     return {
         "sha1": hashlib.sha1(text.encode("utf-8")).hexdigest(),
-        "preview": text[:_PROMPT_PREVIEW_CHARS],
+        "preview": prompt_preview(text, limit=preview_chars),
         "chars": len(text),
         "archive_path": archive_prompt_text(text, data_root, kind=kind),
     }
+
+
+def load_jsonl_tail(path: Path, limit: int = 20) -> list[dict[str, Any]]:
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except FileNotFoundError:
+        return []
+    items: list[dict[str, Any]] = []
+    for line in lines[-max(1, int(limit)) :]:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            payload = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(payload, dict):
+            items.append(payload)
+    return items
+
+
+def append_jsonl_record(path: Path, record: dict[str, Any], *, max_lines: int = 0) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+    if max_lines > 0:
+        try:
+            lines = path.read_text(encoding="utf-8").splitlines()
+        except OSError:
+            return
+        if len(lines) > max_lines:
+            trimmed = "\n".join(lines[-max_lines:])
+            path.write_text(trimmed + ("\n" if trimmed else ""), encoding="utf-8")
+
+
+def append_prompt_ledger_entry(data_root: Path | None, record: dict[str, Any]) -> Path:
+    root = Path(data_root or (_REPO_ROOT / "data" / "mind"))
+    path = root / "internal_prompt_index.jsonl"
+    append_jsonl_record(path, record, max_lines=max(100, int(CFG.internal_ledger_max_lines)))
+    return path
 
 
 def compact_json_value(value: Any, *, depth: int = 0) -> Any:

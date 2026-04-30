@@ -103,10 +103,21 @@ class BiosLoop:
             "metabolic_mode": "observe",
             "last_internal_decision": {},
             "last_internal_prompt": {},
+            "last_internal_prompt_preview": "",
+            "last_internal_prompt_path": "",
             "last_raw": {},
+            "last_raw_preview": "",
+            "last_raw_path": "",
             "last_parsed": {},
             "last_parsed_fallback": {},
+            "last_fallback": False,
             "last_evidence": {},
+            "last_reward_delta": 0.0,
+            "last_memory_updates": [],
+            "last_growth_updates": [],
+            "last_internal_reason": "",
+            "last_internal_goal": "",
+            "last_internal_next_task": "",
         })
         self._run_times: list[float] = []
         self._llm_times: list[float] = []
@@ -141,14 +152,16 @@ class BiosLoop:
             allowed, _reason = self._resource_governor.allow("bios_cycle", estimated_cost="low" if urgent else "medium")
             if not allowed and not urgent:
                 return None
-        return self.run_once(snapshot, reason="scheduled")
+        return self.run_once(snapshot, reason="scheduled", last_user_interaction_at=last_user_interaction_at)
 
-    def run_once(self, snapshot: dict, reason: str = "scheduled") -> dict:
+    def run_once(self, snapshot: dict, reason: str = "scheduled", last_user_interaction_at: float | None = None) -> dict:
         now = time.time()
         self._prune(now)
         self._state["running"] = True
         growth = (snapshot.get("_growth") or {}) if isinstance(snapshot, dict) else {}
         context = self._build_context(snapshot, growth)
+        if last_user_interaction_at is not None and last_user_interaction_at > 0.0:
+            context["seconds_since_user_input"] = max(0.0, now - float(last_user_interaction_at))
         if self._metabolic_engine is not None:
             metabolic = self._metabolic_engine.current()
             if not metabolic or not metabolic.get("timestamp"):
@@ -194,17 +207,39 @@ class BiosLoop:
                 or action
             )
             self._state["last_internal_prompt"] = compact_prompt(str(internal_record.get("prompt") or ""), Path(self._data_root), kind="bios_prompt")
+            self._state["last_internal_prompt_preview"] = str(self._state["last_internal_prompt"].get("preview") or "")
+            self._state["last_internal_prompt_path"] = str((internal_record.get("ledger_entry") or {}).get("prompt_path") or self._state["last_internal_prompt"].get("archive_path") or "")
             self._state["last_raw"] = compact_prompt(str(internal_record.get("llm_raw") or ""), Path(self._data_root), kind="bios_raw")
+            self._state["last_raw_preview"] = str(self._state["last_raw"].get("preview") or "")
+            self._state["last_raw_path"] = str((internal_record.get("ledger_entry") or {}).get("raw_path") or self._state["last_raw"].get("archive_path") or "")
             self._state["last_parsed"] = internal_record.get("parsed") or {}
             self._state["last_parsed_fallback"] = internal_record.get("parsed_fallback") or {}
+            self._state["last_fallback"] = bool(internal_record.get("fallback_used"))
             self._state["last_evidence"] = compact_json_value(evidence)
+            self._state["last_reward_delta"] = float((reward or {}).get("value", 0.0) or 0.0)
+            self._state["last_memory_updates"] = compact_json_value(internal_record.get("memory_updates") or [])
+            self._state["last_growth_updates"] = compact_json_value(internal_record.get("growth_updates") or [])
+            self._state["last_internal_reason"] = str(action.get("reason") or (internal_record.get("ledger_entry") or {}).get("decision_summary") or "")
+            self._state["last_internal_goal"] = str(action.get("goal") or "")
+            self._state["last_internal_next_task"] = str(internal_record.get("next_task") or "")
         else:
             task = self._select_task(context)
             self._state["last_internal_decision"] = {}
             self._state["last_internal_prompt"] = {}
+            self._state["last_internal_prompt_preview"] = ""
+            self._state["last_internal_prompt_path"] = ""
             self._state["last_raw"] = {}
+            self._state["last_raw_preview"] = ""
+            self._state["last_raw_path"] = ""
             self._state["last_parsed"] = {}
             self._state["last_parsed_fallback"] = {}
+            self._state["last_fallback"] = False
+            self._state["last_reward_delta"] = 0.0
+            self._state["last_memory_updates"] = []
+            self._state["last_growth_updates"] = []
+            self._state["last_internal_reason"] = ""
+            self._state["last_internal_goal"] = ""
+            self._state["last_internal_next_task"] = ""
             result = self._execute_task(task, snapshot, context)
             self._state["last_evidence"] = compact_json_value(result.get("data") or result.get("evidence") or {})
         self._emit("bios_task_started", f"BIOS task started: {task['task']}", outputs={"reason": task.get("reason", "")})

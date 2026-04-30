@@ -96,6 +96,9 @@ class RewardEngine:
         elif kind in {"lesson_produced", "growth_blocker_resolved", "operator_confirms_improvement"}:
             components.append({"label": "meaningful_learning", "value": 0.14})
             reason = "meaningful_learning"
+        elif kind in {"evidence_recorded", "recovery_reason_recorded", "fallback_decision_stored"}:
+            components.append({"label": "internal_evidence", "value": 0.06 if kind != "fallback_decision_stored" else 0.03})
+            reason = "internal_evidence"
         elif kind in {"operator_correction", "invalid_internal_json"}:
             components.append({"label": "operator_or_internal_regression", "value": -0.12})
             reason = "operator_or_internal_regression"

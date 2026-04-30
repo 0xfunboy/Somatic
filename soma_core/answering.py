@@ -55,16 +55,24 @@ class AnswerFinalizer:
 
         if skill_result is not None and skill_result.get("ok") is True:
             text = self._skill_success_text(skill_result, italian)
+            preserve_format = bool(skill_result.get("deterministic")) and str(skill_result.get("format") or "") in {"json", "text"}
             return self._filter.clean_response(
                 text,
                 user_text,
                 snapshot,
                 skill_result=skill_result,
+                preserve_format=preserve_format,
             )
 
         if skill_result is not None and skill_result.get("ok") is False:
             text = self._skill_failure_text(skill_result, italian)
-            return self._filter.clean_response(text, user_text, snapshot, skill_result=skill_result)
+            return self._filter.clean_response(
+                text,
+                user_text,
+                snapshot,
+                skill_result=skill_result,
+                preserve_format=bool(skill_result.get("deterministic")),
+            )
 
         if llm_text:
             return self._filter.clean_response(llm_text, user_text, snapshot)
